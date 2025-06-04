@@ -12,10 +12,13 @@ class Config:
     DISCORD_API_TOKEN = os.getenv("DISCORD_API_TOKEN")
     OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY")
 
+    BOT_USER_ID = int(os.getenv("BOT_USER_ID", "0"))  # Must be an integer
+
     # Model selection
     COT_MODEL_ID = os.getenv("COT_MODEL_ID")
     MSG_MODEL_ID = os.getenv("MSG_MODEL_ID")
     IMG_MODEL_ID = os.getenv("IMG_MODEL_ID")
+    WEB_MODEL_ID = os.getenv("WEB_MODEL_ID")
 
     # Cache settings
     CACHE_LENGTH = int(os.getenv("CACHE_LENGTH", "1000"))
