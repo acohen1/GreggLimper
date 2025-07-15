@@ -42,18 +42,29 @@ class GLCache:
         if channel_id not in self._caches:
             raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
 
-        self._caches[channel_id].append(message_obj)
+        cache = self._caches[channel_id]
 
-        # Memoize formatted payload (only once per message_id)
+        # Preemptively check if we're about to evict one
+        evicted = None
+        if len(cache) == cache.maxlen:
+            evicted = cache[0].id  # Leftmost = oldest = next to be evicted
+
+        cache.append(message_obj)
+
+        # Memo cleanup
+        if evicted is not None:
+            self._memo.pop(evicted, None)
+
+        # Memoize if needed
         msg_id = message_obj.id
         needs_memo = msg_id not in self._memo
-
         if needs_memo:
             self._memo[msg_id] = await format_message(message_obj)
 
-        
-        # Log the addition
-        logger.info(f"Added message {msg_id} to channel {channel_id} cache (memo { 'created' if needs_memo else 'reused' })")
+        logger.info(
+            f"Added message {msg_id} to channel {channel_id} cache "
+            f"(memo {'created' if needs_memo else 'reused'})"
+        )
 
     # ------------------------------------------------------------------ #
     # READ helpers
