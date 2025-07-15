@@ -9,7 +9,7 @@ Memo table (dict) keyed by Discord message id
 """
 
 from typing import Any, List, Tuple
-from discord import Message, TextChannel, User, Member, Role, Attachment, File
+from discord import Message, TextChannel, User, Member, Role, Attachment, File, Client
 from collections import deque
 
 from gregg_limper.config import Config
@@ -25,16 +25,8 @@ class GLCache:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-
-            # Deque cache for each configured channel
-            cls._instance._caches = {
-                cid: deque(maxlen=Config.CACHE_LENGTH)
-                for cid in Config.CHANNEL_IDS
-            }
-
-            # Global memo table: {message_id: formatted_payload}
+            cls._instance._caches = {}
             cls._instance._memo = {}
-
         return cls._instance
 
     # ------------------------------------------------------------------ #
@@ -54,8 +46,14 @@ class GLCache:
 
         # Memoize formatted payload (only once per message_id)
         msg_id = message_obj.id
-        if msg_id not in self._memo:
+        needs_memo = msg_id not in self._memo
+
+        if needs_memo:
             self._memo[msg_id] = await format_message(message_obj)
+
+        
+        # Log the addition
+        logger.info(f"Added message {msg_id} to channel {channel_id} cache (memo { 'created' if needs_memo else 'reused' })")
 
     # ------------------------------------------------------------------ #
     # READ helpers
@@ -80,6 +78,37 @@ class GLCache:
         msgs = self._caches[channel_id]
         slice_start = max(len(msgs) - n, 0)
         return [(m.author.id, self._memo[m.id]) for m in list(msgs)[slice_start:]]
+
+    # ------------------------------------------------------------------ #
+    # INITIALIZATION
+    # ------------------------------------------------------------------ #
+
+    async def initialize(self, client: Client, channel_ids: list[str]) -> None:
+        """Fetch and cache recent messages from Discord channels."""
+        if self._caches and set(self._caches.keys()) == set(channel_ids):
+            logger.info("Cache already initialized with same channel IDs. Skipping.")
+            return
+
+        # Initialize empty data structures
+        self._caches = {
+            cid: deque(maxlen=Config.CACHE_LENGTH)
+            for cid in channel_ids
+        }
+        self._memo = {}  # Clear to be safe -- this is a fresh start either way
+
+        # Populate caches with recent messages (UP TO Config.CACHE_LENGTH)
+        for cid in channel_ids:
+            channel = client.get_channel(int(cid))
+            if not isinstance(channel, TextChannel):
+                logger.warning(f"Channel {cid} is not a text channel or not found. Skipping.")
+                continue
+
+            logger.info(f"Fetching history for channel {cid}...")
+            async for msg in channel.history(limit=Config.CACHE_LENGTH, oldest_first=True):
+                await self.add_message(cid, msg)
+
+        
+        logger.info(f"Initialized caches for {len(channel_ids)} channels")
 
     # ------------------------------------------------------------------ #
     # MAINTENANCE

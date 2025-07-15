@@ -77,6 +77,6 @@ def classify(msg: Message) -> Dict[str, Any]:
     # Log classification result
     # classify: 118235901246 [User#1234] -> types=['text', 'gif', 'link'] | 'Check this out https://tenor.com/view/...'
     msg_snippet = (msg.content[:50] + "...") if msg.content else "<empty>"
-    logger.debug(f"classify: {msg.id} [{msg.author}] -> types={list(result.keys())} | '{msg_snippet}'")
+    logger.info(f"classify: {msg.id} [{msg.author}] -> types={list(result.keys())} | '{msg_snippet}'")
 
     return result
