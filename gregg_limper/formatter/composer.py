@@ -2,7 +2,10 @@ import asyncio
 from typing import Dict, List
 from .handlers import get as get_handler
 from discord import User
-from config import Config
+from gregg_limper.config import Config
+
+import logging
+logger = logging.getLogger(__name__)
 
 ORDER = ["text", "image", "gif", "link"]
 

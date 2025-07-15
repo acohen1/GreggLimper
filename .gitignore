@@ -1,2 +1,5 @@
 /glvenv
 gregg_limper/.env
+.venv/
+.env
+__pycache__/

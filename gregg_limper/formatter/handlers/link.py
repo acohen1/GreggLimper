@@ -14,6 +14,9 @@ import asyncio
 from . import register
 from ...client_oai import summarize_url
 
+import logging
+logger = logging.getLogger(__name__)
+
 @register
 class LinkHandler:
     media_type = "link"
@@ -24,6 +27,7 @@ class LinkHandler:
             try:
                 summary = await summarize_url(url)
             except Exception as e:
+                logger.error(f"Failed to summarize URL {url}: {e}")
                 summary = f"(link error: {e})"
             return f"[link] {url} — {summary}"
 

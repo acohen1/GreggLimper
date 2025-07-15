@@ -1,7 +1,18 @@
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Configure global logging
+LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s"
+DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+logging.basicConfig(
+    format=LOG_FORMAT,
+    datefmt=DATE_FORMAT,
+    level=logging.INFO
+)
 
 def _split_ids(raw: str) -> list[str]:
     """Split a comma-separated string, trim whitespace, drop empties"""

@@ -4,6 +4,9 @@ from typing import Any, Dict, List
 from urllib.parse import urlparse
 from discord import Message
 
+import logging
+logger = logging.getLogger(__name__)
+
 # --------------------------------------------------------------------- #
 #  Helpers
 # --------------------------------------------------------------------- #
@@ -70,5 +73,10 @@ def classify(msg: Message) -> Dict[str, Any]:
         result["image"] = images
     if gifs:
         result["gif"] = gifs
+
+    # Log classification result
+    # classify: 118235901246 [User#1234] -> types=['text', 'gif', 'link'] | 'Check this out https://tenor.com/view/...'
+    msg_snippet = (msg.content[:50] + "...") if msg.content else "<empty>"
+    logger.debug(f"classify: {msg.id} [{msg.author}] -> types={list(result.keys())} | '{msg_snippet}'")
 
     return result

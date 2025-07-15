@@ -60,7 +60,7 @@ class GIFHandler:
 
     @staticmethod
     def _first_frame_png(gif_bytes: bytes) -> bytes:
-        # Decode first frame → numpy → encode PNG in-memory
+        # Decode first frame -> numpy -> encode PNG in-memory
         frame = iio.imread(gif_bytes, index=0)     # ndarray
         png_bytes = iio.imwrite("<bytes>", frame, extension=".png")
         return png_bytes

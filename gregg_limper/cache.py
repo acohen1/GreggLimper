@@ -8,12 +8,15 @@ Memo table (dict) keyed by Discord message id
     - Prevents re-formatting the same Discord message multiple times
 """
 
-from typing import Any, List
+from typing import Any, List, Tuple
 from discord import Message, TextChannel, User, Member, Role, Attachment, File
 from collections import deque
 
-from config import Config
-from formatter import format_message
+from gregg_limper.config import Config
+from gregg_limper.formatter import format_message
+
+import logging
+logger = logging.getLogger(__name__)
 
 class GLCache:
     """Singleton, channel-aware cache with memoized message formatting."""
@@ -25,7 +28,7 @@ class GLCache:
 
             # Deque cache for each configured channel
             cls._instance._caches = {
-                cid: deque(maxlen=Config.MAX_CACHE_SIZE)
+                cid: deque(maxlen=Config.CACHE_LENGTH)
                 for cid in Config.CHANNEL_IDS
             }
 
@@ -58,32 +61,32 @@ class GLCache:
     # READ helpers
     # ------------------------------------------------------------------ #
 
-    def get_all_messages(self, channel_id: int) -> List[Any]:
-        """Return raw messages [oldest → newest]."""
+    def get_all_messages(self, channel_id: int) -> List[Message]:
+        """Return raw Discord.Message objects [oldest -> newest]."""
         if channel_id not in self._caches:
             raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
         return list(self._caches[channel_id])
 
-    def get_all_formatted(self, channel_id: int) -> List[Any]:
-        """Return formatted payloads [oldest → newest] for a channel."""
+    def get_all_formatted(self, channel_id: int) -> List[Tuple[int, str]]:
+        """Return formatted (author_id, message) tuples [oldest -> newest] for a channel."""
         if channel_id not in self._caches:
             raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
-        return [self._memo[msg.id] for msg in self._caches[channel_id]]
+        return [(msg.author.id, self._memo[msg.id]) for msg in self._caches[channel_id]]
 
-    def get_recent_formatted(self, channel_id: int, n: int) -> List[Any]:
-        """Return the n most-recent formatted payloads [oldest → newest]."""
+    def get_recent_formatted(self, channel_id: int, n: int) -> List[Tuple[int, str]]:
+        """Return the n most-recent formatted (author_id, message) tuples [oldest -> newest]."""
         if channel_id not in self._caches:
             raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
         msgs = self._caches[channel_id]
         slice_start = max(len(msgs) - n, 0)
-        return [self._memo[m.id] for m in list(msgs)[slice_start:]]
+        return [(m.author.id, self._memo[m.id]) for m in list(msgs)[slice_start:]]
 
     # ------------------------------------------------------------------ #
     # MAINTENANCE
     # ------------------------------------------------------------------ #
 
     def clear_cache(self, channel_id: int) -> None:
-        """Wipe the raw/formatted cache for that channel (keeps memo for other channels)."""
+        """Wipe the raw/formatted cache for the given channel."""
         if channel_id not in self._caches:
             raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
 

@@ -1,6 +1,6 @@
 from discord import Message
-from .classifier import classify
-from .composer import compose
+from gregg_limper.formatter.classifier import classify
+from gregg_limper.formatter.composer import compose
 
 async def format_message(msg: Message) -> str:
     """

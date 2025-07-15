@@ -1,7 +1,10 @@
 # client_oai.py
 import base64
 from openai import AsyncOpenAI
-from config import Config
+from gregg_limper.config import Config
+
+import logging
+logger = logging.getLogger(__name__)
 
 # One global async-capable client
 aoai = AsyncOpenAI(api_key=Config.OPENAI_API_KEY)

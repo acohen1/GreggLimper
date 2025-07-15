@@ -17,6 +17,9 @@ from . import register
 from ...config import Config
 from ...client_oai import describe_image_bytes
 
+import logging
+logger = logging.getLogger(__name__)
+
 @register
 class ImageHandler:
     media_type = "image"
@@ -37,6 +40,7 @@ class ImageHandler:
             try:
                 desc = await describe_image_bytes(blob, mime=att.content_type or "image/png")
             except Exception as e:
+                logger.error(f"Failed to describe image {att.filename}: {e}")
                 desc = f"(vision error: {e})"
             return f"[image:{att.filename}] {desc}"
 
