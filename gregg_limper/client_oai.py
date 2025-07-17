@@ -2,6 +2,7 @@
 import base64
 from openai import AsyncOpenAI
 from gregg_limper.config import Config
+import re
 
 import logging
 logger = logging.getLogger(__name__)
@@ -44,27 +45,60 @@ async def summarize_url(
     url: str,
     context_size: str = "low",                # "low" · "medium" · "high"
     prompt: str = (
-        "Read the webpage at the given URL and produce a concise but information-dense abstract (≈150-200 words)."
-        " - Capture the page's main thesis or purpose, key supporting points, and any notable statistics or figures."
-        " - Include names, dates, and proper nouns that are central to understanding the content."
-        " - Omit navigation menus, ads, and unrelated sidebars."
-        " - Write in complete sentences—no bullet points."
-        " - End with a single-sentence takeaway that someone could quote to convey the essence of the page."
+    "Open and read the exact page at the URL—not previews or related content. "
+    "Write a concise, information-dense summary (~150-200 words) that captures the main purpose, key arguments, and critical details. "
+    "Include names, dates, figures, and statistics. Use full sentences, no bullet points. "
+    "End with one sentence that distills the page's core message. Focus only on high-signal content."
     ),
     model: str = Config.WEB_MODEL_ID,
+    enable_citations: bool = True,
 ) -> str:
     """
     Async wrapper around the Web-Search tool.
 
     - Sends the URL as input plus the built-in `web_search_preview` tool.
     - Returns plain-text `output_text`.
+    - Context size controls how much detail the model should include (low, medium, high).
     """
-    resp = await aoai.responses.create(
-        model=model,
-        tools=[{
-            "type": "web_search_preview",
-            "search_context_size": context_size,
-        }],
-        input=f"{prompt}\nURL: {url}",
-    )
-    return resp.output_text.strip()
+    try:
+        resp = await aoai.chat.completions.create(
+            model=model,
+            web_search_options={
+                "search_context_size": context_size,
+            },
+            messages=[{
+                "role": "user",
+                "content": f"{prompt}\nURL: {url}",
+            }],
+        )
+
+        summary = resp.choices[0].message.content.strip()
+        # Remove in-text citations if requested
+        if not enable_citations:
+            summary = re.sub(r'\[.*?\]\(https?://[^\)]+\)', '', summary)
+        return summary
+    
+        # NOTE: (LEGACY) The following code is an alternative way to use the web search tool for models
+        # that aren't specifically dedicated to web search. If using -search-preview models, ignore this,
+        # you can use the above method directly.
+        # This is left here for reference but not used in the current implementation.
+        
+        # resp = await aoai.responses.create(
+        #     model=model,
+        #     tools=[{
+        #         "type": "web_search_preview",
+        #         "search_context_size": context_size,
+        #     }],
+        #
+        #     input=f"{prompt}\nURL: {url}",
+        #     # max_output_tokens=max_output_tokens
+        # )
+        # summary = resp.output_text.strip()
+        # # Remove in-text citations if requested
+        # if not enable_citations:
+        #     summary = re.sub(r'\[.*?\]\(https?://[^\)]+\)', '', summary)
+        # return summary
+
+    except Exception as e:
+        logger.error(f"Error summarizing URL {url}: {e}")
+        return "Error summarizing URL"

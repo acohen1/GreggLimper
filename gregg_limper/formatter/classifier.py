@@ -20,6 +20,10 @@ _GIF_DOMAINS = {
     "media.giphy.com",
 }
 
+def _strip_urls(text: str) -> str:
+    """Remove all URLs from the string."""
+    return _URL_RE.sub("", text).strip()
+
 def _is_gif_url(url: str) -> bool:
     """
     Heuristic:
@@ -49,9 +53,11 @@ def classify(msg: Message) -> Dict[str, Any]:
     }
     """
     result: Dict[str, Any] = {}
+    content = msg.content or ""
 
-    # 1) plain text (keep full string for TextHandler to trim later)
-    result["text"] = msg.content or ""
+    # 1) text content -- only added if message includes text beyond just URLs
+    if (stripped := _strip_urls(content)):
+        result["text"] = stripped
 
     # 2) attachments
     images, gifs = [], []
@@ -62,7 +68,7 @@ def classify(msg: Message) -> Dict[str, Any]:
             images.append(att)
 
     # 3) URLs in message content
-    for url in _URL_RE.findall(msg.content or ""):
+    for url in _URL_RE.findall(content):
         if _is_gif_url(url):
             gifs.append(url)
         else:

@@ -9,6 +9,7 @@ LinkHandler Pipeline
 """
 
 from __future__ import annotations
+import re
 from typing import List
 import asyncio
 from . import register
@@ -25,7 +26,7 @@ class LinkHandler:
     async def handle(urls: List[str]) -> List[str]:
         async def _process(url: str) -> str:
             try:
-                summary = await summarize_url(url)
+                summary = await summarize_url(url, enable_citations=False)
             except Exception as e:
                 logger.error(f"Failed to summarize URL {url}: {e}")
                 summary = f"(link error: {e})"
