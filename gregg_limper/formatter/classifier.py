@@ -20,21 +20,25 @@ _GIF_DOMAINS = {
     "media.giphy.com",
 }
 
-def _strip_urls(text: str) -> str:
-    """Remove all URLs from the string."""
-    return _URL_RE.sub("", text).strip()
+_YOUTUBE_DOMAINS = {
+    "youtube.com",
+    "youtu.be",
+}
+
+def _is_youtube_url(url: str) -> bool:
+    host = urlparse(url.lower()).hostname or ""
+    return any(dom in host for dom in _YOUTUBE_DOMAINS)
 
 def _is_gif_url(url: str) -> bool:
-    """
-    Heuristic:
-    - ends with '.gif'   -> yes
-    - hostname contains a known GIF service -> yes
-    """
     url_lc = url.lower()
     if url_lc.endswith(".gif"):
         return True
     host = urlparse(url_lc).hostname or ""
     return any(dom in host for dom in _GIF_DOMAINS)
+
+def _strip_urls(text: str) -> str:
+    """Remove all URLs from the string."""
+    return _URL_RE.sub("", text).strip()
 
 # --------------------------------------------------------------------- #
 #  Main entry
@@ -59,7 +63,7 @@ def classify(msg: Message) -> Dict[str, Any]:
     if (stripped := _strip_urls(content)):
         result["text"] = stripped
 
-    # 2) attachments
+    # 2) attachments -- note that GIFs are accumulated between both msg attachments and text URLs
     images, gifs = [], []
     for att in msg.attachments:
         if att.content_type == "image/gif":
@@ -71,6 +75,8 @@ def classify(msg: Message) -> Dict[str, Any]:
     for url in _URL_RE.findall(content):
         if _is_gif_url(url):
             gifs.append(url)
+        elif _is_youtube_url(url):
+            result.setdefault("youtube", []).append(url)
         else:
             # generic link for LinkHandler
             result.setdefault("link", []).append(url)

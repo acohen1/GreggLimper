@@ -1,10 +1,10 @@
 """
-Per-channel caches backed by a deque
+Per-channel caches backed by a deque (raw Discord message objects)
     - Leftmost element  = oldest message
     - Rightmost element = newest message
 
-Memo table (dict) keyed by Discord message id
-    - msg_id -> formatted payload (via MessageFormatter)
+Memo table (dict) keyed by Discord message id (Formatted payload)
+    - msg_id -> FORMATTED payload (via MessageFormatter)
     - Prevents re-formatting the same Discord message multiple times
 """
 
@@ -44,14 +44,14 @@ class GLCache:
 
         cache = self._caches[channel_id]
 
-        # Preemptively check if we're about to evict one
+        # Preemptively check if we're about to evict a message from the cache
         evicted = None
         if len(cache) == cache.maxlen:
             evicted = cache[0].id  # Leftmost = oldest = next to be evicted
 
         cache.append(message_obj)
 
-        # Memo cleanup
+        # Memo cleanup evicted message
         if evicted is not None:
             self._memo.pop(evicted, None)
 
@@ -63,7 +63,8 @@ class GLCache:
 
         logger.info(
             f"Added message {msg_id} to channel {channel_id} cache "
-            f"(memo {'created' if needs_memo else 'reused'})"
+            f"(memo {'created' if needs_memo else 'reused'}) - "
+            f"Message: {self._memo[msg_id]}... "
         )
 
     # ------------------------------------------------------------------ #

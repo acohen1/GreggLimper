@@ -1,3 +1,10 @@
+"""
+TextHandler Pipeline
+===========
+1. Input: str (plain text message)
+2. Output: List[str] (single-element list if input is non-empty)
+"""
+
 from __future__ import annotations
 from typing import List
 from . import register

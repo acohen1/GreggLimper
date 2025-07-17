@@ -1,3 +1,15 @@
+"""
+GIFHandler Pipeline
+===========
+1. Input slice : List[str] (URLs not already claimed by link logic)
+2. For each URL
+    a. Scrape the page to extract <meta property="og:title"> and <meta property="og:image">.
+    b. Download the actual .gif and extract the first frame as PNG bytes.
+    c. await client_oai.describe_image_bytes(frame_png, mime="image/png")
+    d. Build fragment:  [gif] <title> — <description>
+3. Return list[str] with one line per GIF.
+"""
+
 from __future__ import annotations
 from typing import List, Tuple
 import aiohttp, asyncio
