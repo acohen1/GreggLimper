@@ -19,6 +19,8 @@ def _split_ids(raw: str) -> list[str]:
     return [cid.strip() for cid in raw.split(",") if cid.strip()]
 
 class Config:
+    # -- Required settings --
+
     # Required secrets
     DISCORD_API_TOKEN = os.getenv("DISCORD_API_TOKEN")
     OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY")
@@ -37,9 +39,15 @@ class Config:
     # Cache settings
     CACHE_LENGTH = int(os.getenv("CACHE_LENGTH", "1000"))
 
+    # -- Optional settings --
+
     # max size for image attachments
     MAX_IMAGE_MB = int(os.getenv("MAX_IMAGE_MB", "5"))
     MAX_GIF_MB = int(os.getenv("MAX_GIF_MB", "10"))
+
+    # Youtube processing settings
+    YT_THUMBNAIL_SIZE = os.getenv("YT_THUMBNAIL_SIZE", "medium")        # "default", "medium", "high"
+    YT_DESC_MAX_LEN = int(os.getenv("YT_DESC_MAX_LEN", "200"))          # max length of video description
 
     # ----- validation --------------------------------------------------- #
 
