@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 
 class YouTubeHandler:
+    media_type = "youtube"
+    
     # ---------- low‑level helpers ------------------------------------ #
 
     @staticmethod
@@ -35,7 +37,6 @@ class YouTubeHandler:
     ) -> Tuple[str, str]:
         """
         Query the YouTube Data API and return (title, description).
-        Raise on any failure so the handle() wrapper can decide what to do.
         """
         params = {
             "part": "snippet",
@@ -62,7 +63,6 @@ class YouTubeHandler:
     async def handle(urls: List[str]) -> List[str]:
         """
         Process a batch of YouTube URLs and return descriptive fragments.
-        Mirrors GIFHandler: all low‑level errors bubble up and are handled here.
         """
         logger.info("Processing %d YouTube URLs", len(urls))
 
