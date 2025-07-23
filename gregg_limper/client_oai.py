@@ -12,7 +12,7 @@ aoai = AsyncOpenAI(api_key=Config.OPENAI_API_KEY)
 
 async def describe_image_bytes(
     blob: bytes,
-    mime: str = "image/png",
+    mime: str = "image/png",        # image/jpeg, image/png, etc.
     prompt: str = (
         "Describe the image clearly and objectively, focusing on visible text, "
         "layout, and key visual elements. Avoid interpretation or embellishment—"

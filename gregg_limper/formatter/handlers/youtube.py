@@ -8,15 +8,13 @@ YouTubeHandler Pipeline
 3. Return list[str] with one line per YouTube video.
 """
 
-# TODO: Summarize the video description using a client_oai.py call--gathering all relevant context.
-# TODO: Handle YouTube thumbnail extraction and run through vision pipeline for a description.
-
 import asyncio
 from typing import List, Tuple
 from urllib.parse import urlparse, parse_qs
 from . import register
 import aiohttp
 from gregg_limper.config import Config
+from gregg_limper.client_oai import describe_image_bytes
 
 import logging
 logger = logging.getLogger(__name__)
@@ -37,10 +35,12 @@ class YouTubeHandler:
 
     @staticmethod
     async def _fetch_video_metadata(
-        session: aiohttp.ClientSession, video_id: str
-    ) -> Tuple[str, str]:
+        session: aiohttp.ClientSession, 
+        video_id: str,
+        thumbnail_size: str = "medium"  # "default", "medium", "high"
+    ) -> Tuple[str, str, str]:
         """
-        Query the YouTube Data API and return (title, description).
+        Query the YouTube Data API and return (title, description, thumbnail url).
         """
         params = {
             "part": "snippet",
@@ -59,7 +59,23 @@ class YouTubeHandler:
             raise ValueError(f"No metadata returned for video ID {video_id}")
 
         snippet = items[0]["snippet"]
-        return snippet.get("title", "Untitled"), snippet.get("description", "")
+
+        title = snippet.get("title", "Untitled")
+        description = snippet.get("description", "")
+        thumbnail_url = snippet.get("thumbnails", {}).get(thumbnail_size, {}).get("url", "")
+        return title, description, thumbnail_url
+    
+    @staticmethod
+    async def _download_image_bytes(
+        session: aiohttp.ClientSession, url: str
+    ) -> Tuple[bytes, str]:
+        """Download thumbnail from url and return (bytes, mime-type)."""
+        if not url:
+            raise ValueError("Empty thumbnail URL")
+        async with session.get(url) as resp:
+            resp.raise_for_status()
+            mime = (resp.headers.get("Content-Type") or "image/jpeg").lower().split(";")[0]
+            return await resp.read(), mime
 
     # ---------- public contract -------------------------------------- #
 
@@ -78,11 +94,24 @@ class YouTubeHandler:
                     if not video_id:
                         raise ValueError("Invalid YouTube URL")
 
-                    title, desc = await YouTubeHandler._fetch_video_metadata(
-                        session, video_id
+                    # 1) Fetch video metadata
+                    title, desc, thumbnail_url = await YouTubeHandler._fetch_video_metadata(
+                        session, video_id, Config.YT_THUMBNAIL_SIZE
                     )
-                    return f"[youtube] {title} — {desc}"
+                    clean_desc = " ".join(desc.split())
+                    max_len = Config.YT_DESC_MAX_LEN
+                    desc = clean_desc[:max_len] + ("..." if len(clean_desc) > max_len else "")
 
+                    # 2) Thumbnail -> vision model -> text description
+                    try:
+                        blob, mime = await YouTubeHandler._download_image_bytes(session, thumbnail_url)
+                        thumb_desc = await describe_image_bytes(blob, mime=mime)
+                    except Exception as e:
+                        logger.warning("Failed to describe thumbnail for %s: %s", url, e)
+                        thumb_desc = "(thumbnail unavailable)"
+
+                    return f"[youtube] {title} — {desc} [thumbnail: {thumb_desc}]"
+                
                 except Exception as e:
                     logger.warning("Failed to process YouTube at %s: %s", url, e)
                     return f"[youtube] {url} — (error: {e})"
