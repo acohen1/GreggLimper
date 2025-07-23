@@ -47,7 +47,7 @@ def _strip_urls(text: str) -> str:
 
 def classify(msg: Message) -> Dict[str, Any]:
     """
-    Returns dict media_type → slice_data.
+    Returns dict media_type -> slice_data.
 
     Example:
     {

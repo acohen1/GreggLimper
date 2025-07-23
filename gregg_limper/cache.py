@@ -36,7 +36,7 @@ class GLCache:
     # Note: these methods are async to allow for message formatting
     # ------------------------------------------------------------------ #
 
-    async def add_message(self, channel_id: str, message_obj: Message) -> None:
+    async def add_message(self, channel_id: int, message_obj: Message) -> None:
         """
         Append *raw* Discord message to that channel's deque and memoize its
         formatted representation. Raises KeyError if channel_id is unknown.
@@ -103,7 +103,7 @@ class GLCache:
     # INITIALIZATION
     # ------------------------------------------------------------------ #
 
-    async def initialize(self, client: Client, channel_ids: list[str]) -> None:
+    async def initialize(self, client: Client, channel_ids: list[int]) -> None:
         """
         Fetch and cache recent messages from Discord channels.
         """
@@ -120,7 +120,7 @@ class GLCache:
 
         # Populate caches with recent messages (UP TO Config.CACHE_LENGTH)
         for cid in channel_ids:
-            channel = client.get_channel(int(cid))
+            channel = client.get_channel(cid)
             if not isinstance(channel, TextChannel):
                 logger.warning(f"Channel {cid} is not a text channel or not found. Skipping.")
                 continue
