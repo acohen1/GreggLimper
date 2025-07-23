@@ -8,19 +8,23 @@ YouTubeHandler Pipeline
 3. Return list[str] with one line per YouTube video.
 """
 
+# TODO: Summarize the video description using a client_oai.py call--gathering all relevant context.
+# TODO: Handle YouTube thumbnail extraction and run through vision pipeline for a description.
+
 import asyncio
 from typing import List, Tuple
 from urllib.parse import urlparse, parse_qs
+from . import register
 import aiohttp
 from gregg_limper.config import Config
-import logging
 
+import logging
 logger = logging.getLogger(__name__)
 
-
+@register
 class YouTubeHandler:
     media_type = "youtube"
-    
+
     # ---------- low‑level helpers ------------------------------------ #
 
     @staticmethod
