@@ -26,7 +26,8 @@ _YOUTUBE_DOMAINS = {
 }
 
 def _is_youtube_url(url: str) -> bool:
-    host = urlparse(url.lower()).hostname or ""
+    url_lc = url.lower()
+    host = urlparse(url_lc).hostname or ""
     return any(dom in host for dom in _YOUTUBE_DOMAINS)
 
 def _is_gif_url(url: str) -> bool:

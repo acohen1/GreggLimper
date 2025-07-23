@@ -23,6 +23,7 @@ class Config:
     DISCORD_API_TOKEN = os.getenv("DISCORD_API_TOKEN")
     OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY")
     BOT_USER_ID = int(os.getenv("BOT_USER_ID"))
+    GCLOUD_API_KEY = os.getenv("GCLOUD_API_KEY")
 
     # Model selection
     COT_MODEL_ID = os.getenv("COT_MODEL_ID")
@@ -50,6 +51,7 @@ class Config:
         required = [
             ("DISCORD_API_TOKEN", cls.DISCORD_API_TOKEN),
             ("OPENAI_API_KEY",    cls.OPENAI_API_KEY),
+            ("GCLOUD_API_KEY",    cls.GCLOUD_API_KEY),
             ("BOT_USER_ID",       cls.BOT_USER_ID),
             ("COT_MODEL_ID",      cls.COT_MODEL_ID),
             ("MSG_MODEL_ID",      cls.MSG_MODEL_ID),

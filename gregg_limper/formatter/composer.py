@@ -7,7 +7,7 @@ from gregg_limper.config import Config
 import logging
 logger = logging.getLogger(__name__)
 
-ORDER = ["text", "image", "gif", "link"]
+ORDER = ["text", "image", "gif", "link", "youtube"]
 
 async def compose(author: User, classified: Dict[str, any]) -> str:
     """

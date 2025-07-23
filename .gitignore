@@ -3,3 +3,4 @@ gregg_limper/.env
 .venv/
 .env
 __pycache__/
+test.py
