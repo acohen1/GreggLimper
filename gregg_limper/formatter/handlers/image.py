@@ -6,7 +6,10 @@ ImageHandler
    a. Download bytes (≤ Config.MAX_IMAGE_MB).
    b. await client_oai.describe_image_bytes(...)
    c. Build fragment:  [image:<filename>] <description>
-3. Return list[str] (one line per image).
+3. Return list[dict] with one dict per image:
+   { "type": "image", "title": "<filename>", "description": "<vision description>" }
+
+NOTE: Vision errors keep the record; we substitute a placeholder description.
 """
 
 from __future__ import annotations
@@ -34,15 +37,22 @@ class ImageHandler:
             return data
 
     @staticmethod
-    async def handle(images: list[Attachment]) -> list[str]:
-        async def _process(att: Attachment) -> str:
+    async def handle(images: list[Attachment]) -> list[dict]:
+        """
+        Process a batch of image attachments and return media-record dicts.
+        Each dict contains:
+        - "type": "image"
+        - "title": filename
+        - "description": text description from vision model
+        """
+        async def _process(att: Attachment) -> dict:
             blob = await ImageHandler._fetch_bytes(att.url, Config.MAX_IMAGE_MB)
             try:
                 desc = await describe_image_bytes(blob, mime=att.content_type or "image/png")
             except Exception as e:
                 logger.error(f"Failed to describe image {att.filename}: {e}")
                 desc = f"(vision error: {e})"
-            return f"[image:{att.filename}] {desc}"
+            return {"type": "image", "title": att.filename, "description": desc}
 
         return await asyncio.gather(*(_process(a) for a in images))
 

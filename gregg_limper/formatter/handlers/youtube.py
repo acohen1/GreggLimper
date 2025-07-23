@@ -5,7 +5,10 @@ YouTubeHandler Pipeline
 2. For each URL
     a. Call YouTube API to get video details.
     b. Build fragment:  [youtube] <title> — <description>
-3. Return list[str] with one line per YouTube video.
+3. Return List[dict] with one dict per URL:
+   { "type": "youtube", "title": "<title>", "description": "<description>", "thumbnail": "<thumbnail description>" }
+
+NOTE: We tolerate thumbnail-vision failures here and keep title/description.
 """
 
 import asyncio
@@ -80,15 +83,20 @@ class YouTubeHandler:
     # ---------- public contract -------------------------------------- #
 
     @staticmethod
-    async def handle(urls: List[str]) -> List[str]:
+    async def handle(urls: List[str]) -> List[dict]:
         """
-        Process a batch of YouTube URLs and return descriptive fragments.
+        Process a batch of YouTube URLs and return media-record dicts.
+        Each dict contains:
+        - "type": "youtube"
+        - "title": video title
+        - "description": video description
+        - "thumbnail": thumbnail description from vision model
         """
         logger.info("Processing %d YouTube URLs", len(urls))
 
         async with aiohttp.ClientSession() as session:
 
-            async def _process(url: str) -> str:
+            async def _process(url: str) -> dict:
                 try:
                     video_id = YouTubeHandler._extract_video_id(url)
                     if not video_id:
@@ -110,10 +118,10 @@ class YouTubeHandler:
                         logger.warning("Failed to describe thumbnail for %s: %s", url, e)
                         thumb_desc = "(thumbnail unavailable)"
 
-                    return f"[youtube] {title} — {desc} [thumbnail: {thumb_desc}]"
-                
+                    return {"type": "youtube", "title": title, "description": desc, "thumbnail": thumb_desc}
+
                 except Exception as e:
                     logger.warning("Failed to process YouTube at %s: %s", url, e)
-                    return f"[youtube] {url} — (error: {e})"
+                    return {"type": "youtube", "title": url, "description": f"(error: {e})"}
 
             return await asyncio.gather(*(_process(u) for u in urls))

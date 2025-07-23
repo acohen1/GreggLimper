@@ -5,7 +5,10 @@ LinkHandler Pipeline
 2. For each URL
    a. await client_oai.summarize_url(url)
    b. Build fragment:  [link] <url> — <summary>
-3. Return list[str] with one line per URL.
+3. Return List[dict] with one dict per URL:
+   { "type": "link", "title": "<url>", "description": "<summary>" }
+
+NOTE: We tolerate summarization failures here and keep the URL.
 """
 
 from __future__ import annotations
@@ -23,14 +26,21 @@ class LinkHandler:
     media_type = "link"
 
     @staticmethod
-    async def handle(urls: List[str]) -> List[str]:
-        async def _process(url: str) -> str:
+    async def handle(urls: List[str]) -> List[dict]:
+        """
+        Process a batch of URLs and return media-record dicts.
+        Each dict contains:
+        - "type": "link"
+        - "title": URL
+        - "description": text summary from web search model
+        """
+        async def _process(url: str) -> dict:
             try:
                 summary = await summarize_url(url, enable_citations=False)
             except Exception as e:
                 logger.error(f"Failed to summarize URL {url}: {e}")
                 summary = f"(link error: {e})"
-            return f"[link] {url} — {summary}"
+            return {"type": "link", "title": url, "description": summary}
 
         # Run all URL fetches concurrently
         return await asyncio.gather(*(_process(u) for u in urls))

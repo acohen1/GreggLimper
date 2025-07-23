@@ -1,12 +1,15 @@
 """
 TextHandler Pipeline
-===========
-1. Input: str (plain text message)
-2. Output: List[str] (single-element list if input is non-empty)
+====================
+1. Input  : str  (raw message text)
+2. Output : List[dict] with a single record, e.g.:
+      { "type": "text", "content": "<original text>" }
+
+NOTE: Plain passthrough for now. Future steps might include username processing or other transformations.
 """
 
 from __future__ import annotations
-from typing import List
+from typing import List, Dict
 from . import register
 
 @register
@@ -14,10 +17,9 @@ class TextHandler:
     media_type = "text"
 
     @staticmethod
-    async def handle(text: str) -> List[str]:
+    async def handle(text: str) -> List[Dict[str, str]]:
         """
-        Simple passthrough for plain message text.
-        Returns a single-element list if text is non-empty.
+        Wrap non-empty message text in a media-record dict.
         """
         stripped = text.strip()
-        return [stripped] if stripped else []
+        return [{"type": "text", "content": stripped}] if stripped else []

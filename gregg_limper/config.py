@@ -19,7 +19,7 @@ def _split_ids(raw: str) -> list[str]:
     return [cid.strip() for cid in raw.split(",") if cid.strip()]
 
 class Config:
-    # -- Required settings --
+    # ----- Required settings ------------------------------------------- #
 
     # Required secrets
     DISCORD_API_TOKEN = os.getenv("DISCORD_API_TOKEN")
@@ -39,7 +39,9 @@ class Config:
     # Cache settings
     CACHE_LENGTH = int(os.getenv("CACHE_LENGTH", "1000"))
 
-    # -- Optional settings --
+    # ----- Optional settings ------------------------------------------- #
+
+    MEDIA_RECORD_FMT = os.getenv("MEDIA_RECORD_FMT", "json")            # media record serialization: "json" | "kv"
 
     # max size for image attachments
     MAX_IMAGE_MB = int(os.getenv("MAX_IMAGE_MB", "5"))
@@ -49,7 +51,7 @@ class Config:
     YT_THUMBNAIL_SIZE = os.getenv("YT_THUMBNAIL_SIZE", "medium")        # "default", "medium", "high"
     YT_DESC_MAX_LEN = int(os.getenv("YT_DESC_MAX_LEN", "200"))          # max length of video description
 
-    # ----- validation --------------------------------------------------- #
+    # ----- Validation --------------------------------------------------- #
 
     @classmethod
     def validate(cls) -> None:

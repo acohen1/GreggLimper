@@ -1,3 +1,17 @@
+"""
+GIFHandler Pipeline
+===================
+1. Input slice : List[str] (URLs not already claimed by link / image logic)
+2. For each URL
+   a. Extract <meta property="og:title"> for a title.
+   b. Extract <meta property="og:image"> for the GIF URL.
+   c. Download GIF ➜ first frame ➜ PNG ➜ vision model.
+3. Return List[dict] like:
+      { "type": "gif", "title": "<cleaned-title>", "vision": "<frame description>" }
+
+NOTE: Vision errors keep the record; we substitute a placeholder description.
+"""
+
 from __future__ import annotations
 from typing import List, Tuple
 import aiohttp, asyncio
@@ -84,25 +98,26 @@ class GIFHandler:
     # ---------- public contract -------------------------------------- #
 
     @staticmethod
-    async def handle(urls: List[str]) -> List[str]:
+    async def handle(urls: List[str]) -> List[dict]:
         """
-        Process a batch of GIF URLs and return descriptive fragments.
+        Process a batch of GIF URLs and return media-record dicts.
+        Each dict contains:
+        - "type": "gif"
+        - "title": cleaned title
+        - "vision": text description from vision model
         """
         logger.info("Processing %d GIF URLs", len(urls))
 
         async with aiohttp.ClientSession() as session:
 
-            async def _process(url: str) -> str:
+            async def _process(url: str) -> dict:
                 try:
                     title, gif_url = await GIFHandler._parse_title_and_gif_url(session, url)
-                    logger.info("GIF media URL for %s: %s", url, gif_url)
-
                     frame_png = await GIFHandler._download_gif_and_extract_frame(session, gif_url)
                     vision = await describe_image_bytes(frame_png, mime="image/png")
-                    return f"[gif] {title} — {vision}"
-
+                    return {"type": "gif", "title": title, "vision": vision}
                 except Exception as e:
                     logger.warning("Failed to process GIF at %s: %s", url, e)
-                    return f"[gif] {url} — (vision error: {e})"
+                    return {"type": "gif", "title": url, "description": f"(vision error: {e})"}
 
             return await asyncio.gather(*(_process(u) for u in urls))

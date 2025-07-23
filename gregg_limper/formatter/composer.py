@@ -1,44 +1,43 @@
 import asyncio
-from typing import Dict, List
+from typing import Dict, List, Any
 from .handlers import get as get_handler
 from discord import User
 from gregg_limper.config import Config
+from gregg_limper.formatter.codec import dump
 
 import logging
 logger = logging.getLogger(__name__)
 
 ORDER = ["text", "image", "gif", "link", "youtube"]
 
-async def compose(author: User, classified: Dict[str, any]) -> str:
+async def compose(author: User, classified: Dict[str, Any]) -> str:
     """
-    - Launch every handler whose media slice exists.
-    - Await them concurrently with asyncio.gather().
-    - Join the returned fragment lists.
+    Aggregate media-slice outputs.
+
+    1. Launch every handler (text, image, gif, link, youtube) whose slice exists.
+    2. Await them concurrently.
+    3. Serialize dicts via formatter.codec.dump -> str.
+    4. Join fragments with double new-lines.
     """
-    coros: List[asyncio.Future] = []
 
-    for media_type in ORDER:
-        data = classified.get(media_type)
-        if not data:
-            continue
-        handler = get_handler(media_type)
-        if handler:
-            coros.append(handler.handle(data))
+    # Kick off handler coroutines in ORDER for deterministic output.
+    coros: List[asyncio.Future] = [
+        get_handler(mt).handle(classified[mt])
+        for mt in ORDER
+        if classified.get(mt) and get_handler(mt)
+    ]
 
-    # Run all handlers in parallel; each returns list[str]
+    # Await all; results is List[List[dict|str]]
     results = await asyncio.gather(*coros) if coros else []
 
-    fragments: List[str] = []
-    for frag_list in results:
-        fragments.extend(frag_list)
+    fragments: List[str] = [
+        dump(rec, fmt=Config.MEDIA_RECORD_FMT)
+        for frag_list in results
+        for rec in frag_list
+    ]
 
-    body = "\n\n".join(filter(None, fragments)).strip()
+    body = "\n\n".join(fragments).strip()
     
-    # TODO: Do we want to author the prefix here? Composer might need to be agnostic.
-    
-    # If the author isn't the bot, include the author name in the output.
-    if author.id != Config.BOT_USER_ID:
-        return f"{author}: {body}"
-    else:
-        return body
-
+    # TODO: Should this occur here?
+    # Prepend author name unless it's the bot itself.
+    return f"{author}: {body}" if author.id != Config.BOT_USER_ID else body

@@ -14,7 +14,7 @@ Any file inside formatter/handlers/ that defines:
 
 is picked up automatically at import-time.
 
-If adding a new handler, ensure:
+NOTE: If adding a new handler, ensure:
 1. It has a unique `media_type` string, added to the ORDER list in composer.py.
 2. It implements the `SliceHandler` protocol (see below).
 3. It is placed in this directory (formatter/handlers/).
