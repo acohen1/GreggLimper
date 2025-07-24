@@ -1,0 +1,1 @@
+# Formats prompt from GLCache for the OpenAI client.
