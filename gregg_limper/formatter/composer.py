@@ -30,7 +30,6 @@ async def compose(message: Message, classified: Dict[str, Any]) -> str:
 
     # Await all; results is List[List[dict|str]]
     results = await asyncio.gather(*coros) if coros else []
-
     flattened_fragments = [rec for frag_list in results for rec in frag_list]
 
     master_record = {
