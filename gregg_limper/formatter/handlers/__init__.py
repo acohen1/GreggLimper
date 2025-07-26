@@ -33,12 +33,16 @@ from pathlib import Path
 class SliceHandler(Protocol):
     media_type: str                          # unique key, e.g. "gif"
     @staticmethod
-    async def handle(slice_data) -> list[str]:
+    async def handle(slice_data) -> list[dict]:
         """
-        Coroutine -> returns **a list of one-line strings** (“fragments”).
-
-        - Each string will be separated from the next with *two* new-lines by the composer.  Don't add blank lines yourself.
-        - Don't include the author prefix.
+        Coroutine -> returns **a list of dictionaries** (“fragments”).
+        - Each dictionary represents a media record formatted as follows:
+        { 
+            "type": "<media-type>", 
+            "title": "<cleaned-title>", 
+            "vision": "<frame description>",
+            other fields as needed...
+        }
         - If you have nothing to contribute, return an empty list (not None).
         """
 

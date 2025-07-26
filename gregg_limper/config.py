@@ -34,7 +34,7 @@ class Config:
     WEB_MODEL_ID = os.getenv("WEB_MODEL_ID")
 
     # Channel allow-list (must not be empty)
-    CHANNEL_IDS = _split_ids(os.getenv("CHANNEL_IDS"))
+    CHANNEL_IDS = list(map(int, _split_ids(os.getenv("CHANNEL_IDS"))))
 
     # Cache settings
     CACHE_LENGTH = int(os.getenv("CACHE_LENGTH", "1000"))

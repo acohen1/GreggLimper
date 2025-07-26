@@ -11,5 +11,5 @@ async def handle(client: discord.Client):
 
     logger.info(f"Initializing GLCache with configured channel IDs: {Config.CHANNEL_IDS}")
     cache = GLCache()
-    c_ids = [int(cid) for cid in Config.CHANNEL_IDS]
+    c_ids = [cid for cid in Config.CHANNEL_IDS]
     await cache.initialize(client, c_ids)

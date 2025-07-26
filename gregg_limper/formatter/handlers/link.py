@@ -4,9 +4,9 @@ LinkHandler Pipeline
 1. Input slice : List[str] (URLs not already claimed by GIF / image logic)
 2. For each URL
    a. await client_oai.summarize_url(url)
-   b. Build fragment:  [link] <url> — <summary>
-3. Return List[dict] with one dict per URL:
-   { "type": "link", "title": "<url>", "description": "<summary>" }
+   b. Build fragment dict: 
+      { "type": "link", "title": "<url>", "description": "<summary>" }
+3. Return List[dict] with one dict per URL
 
 NOTE: We tolerate summarization failures here and keep the URL.
 """
