@@ -7,4 +7,4 @@ async def format_message(msg: Message) -> str:
     Async entry-point used by GLCache / bot.
     """
     classified_msg = classify(msg)
-    return await compose(msg.author, classified_msg)
+    return await compose(msg, classified_msg)

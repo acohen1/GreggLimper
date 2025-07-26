@@ -3,21 +3,22 @@ from typing import Dict, List, Any
 from .handlers import get as get_handler
 from discord import User
 from gregg_limper.config import Config
-from gregg_limper.formatter.codec import dump
+from discord import Message
+import json
 
 import logging
 logger = logging.getLogger(__name__)
 
 ORDER = ["text", "image", "gif", "link", "youtube"]
 
-async def compose(author: User, classified: Dict[str, Any]) -> str:
+async def compose(message: Message, classified: Dict[str, Any]) -> str:
     """
     Aggregate media-slice outputs.
 
     1. Launch every handler (text, image, gif, link, youtube) whose slice exists.
     2. Await them concurrently.
-    3. Serialize dicts via formatter.codec.dump -> str.
-    4. Join fragments with double new-lines.
+    3. Flatten results into a single list of dicts.
+    4. Return a JSON-serializable dict with author, channel_id, timestamp, and fragments.
     """
 
     # Kick off handler coroutines in ORDER for deterministic output.
@@ -30,14 +31,16 @@ async def compose(author: User, classified: Dict[str, Any]) -> str:
     # Await all; results is List[List[dict|str]]
     results = await asyncio.gather(*coros) if coros else []
 
-    fragments: List[str] = [
-        dump(rec, fmt=Config.MEDIA_RECORD_FMT)
-        for frag_list in results
-        for rec in frag_list
-    ]
+    flattened_fragments = [rec for frag_list in results for rec in frag_list]
 
-    body = "\n\n".join(fragments).strip()
-    
-    # TODO: Should this occur here?
-    # Prepend author name unless it's the bot itself.
-    return f"{author}: {body}" if author.id != Config.BOT_USER_ID else body
+    master_record = {
+        "author": {
+            "id": message.author.id,
+            "name": message.author.display_name,
+        },
+        "channel_id": message.channel.id,
+        "timestamp": message.created_at.isoformat(),
+        "fragments": flattened_fragments
+    }
+
+    return json.dumps(master_record, ensure_ascii=False, separators=(',', ': '))

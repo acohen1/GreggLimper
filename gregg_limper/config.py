@@ -40,9 +40,7 @@ class Config:
     CACHE_LENGTH = int(os.getenv("CACHE_LENGTH", "1000"))
 
     # ----- Optional settings ------------------------------------------- #
-
-    MEDIA_RECORD_FMT = os.getenv("MEDIA_RECORD_FMT", "json")            # media record serialization: "json" | "kv"
-
+    
     # max size for image attachments
     MAX_IMAGE_MB = int(os.getenv("MAX_IMAGE_MB", "5"))
     MAX_GIF_MB = int(os.getenv("MAX_GIF_MB", "10"))
