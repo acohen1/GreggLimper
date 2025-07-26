@@ -1,17 +1,26 @@
-"""
-commands/
-=========
-This package handles explicit bot commands that trigger immediate side effects
-(e.g., '/lobotomy'). Commands are typically identified by special prefixes and
-parsed before any message formatting or caching occurs.
+"""Command dispatch utilities."""
 
-Main entrypoints:
-- parse_command(message: discord.Message) -> Optional[str]
-    Determines if the message contains a recognized command.
-- dispatch_command(command: str, message: discord.Message) -> Awaitable[bool]
-    Executes the command and returns whether the message should continue through
-    the standard processing pipeline.
+from __future__ import annotations
+import discord
+from .handlers import get as get_handler
 
-Commands are isolated from core formatting logic and do not mutate shared state
-outside of their intended effect (e.g., clearing cache).
-"""
+
+async def dispatch(client: discord.Client, message: discord.Message) -> bool:
+    """
+    Parse and execute a slash-style command.
+    Returns True if a command was handled.
+    """
+    content = message.content or ""
+    if not content.startswith("/"):
+        return False
+
+    parts = content.lstrip("/").split(None, 1)
+    command = parts[0].lower()
+    args = parts[1] if len(parts) > 1 else ""
+
+    handler = get_handler(command)
+    if not handler:
+        return False
+
+    await handler.handle(client, message, args)
+    return True
