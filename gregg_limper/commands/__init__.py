@@ -3,24 +3,32 @@
 from __future__ import annotations
 import discord
 from .handlers import get as get_handler
+import re
 
+import logging
+logger = logging.getLogger(__name__)
+
+_COMMAND_RE = re.compile(r"/(\w+)(?:\s+(.*))?")
 
 async def dispatch(client: discord.Client, message: discord.Message) -> bool:
     """
-    Parse and execute a slash-style command.
+    Parse and execute the first slash-style command in the message.
     Returns True if a command was handled.
     """
     content = message.content or ""
-    if not content.startswith("/"):
+
+    match = _COMMAND_RE.search(content)
+    if not match:
         return False
 
-    parts = content.lstrip("/").split(None, 1)
-    command = parts[0].lower()
-    args = parts[1] if len(parts) > 1 else ""
+    command, args = match.groups()
+    command = command.lower()
+    args = args or ""
 
     handler = get_handler(command)
     if not handler:
         return False
 
+    logger.info(f"Dispatching command '{command}' with args: {args}")
     await handler.handle(client, message, args)
     return True
