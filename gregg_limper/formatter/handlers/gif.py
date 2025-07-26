@@ -5,7 +5,7 @@ GIFHandler Pipeline
 2. For each URL
    a. Extract <meta property="og:title"> for a title.
    b. Extract <meta property="og:image"> for the GIF URL.
-   c. Download GIF ➜ first frame ➜ PNG ➜ vision model.
+   c. Download GIF -> first frame -> PNG -> vision model.
 3. Return List[dict] like:
       { "type": "gif", "title": "<cleaned-title>", "vision": "<frame description>" }
 

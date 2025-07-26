@@ -5,9 +5,9 @@ ImageHandler
 2. For each attachment
    a. Download bytes (≤ Config.MAX_IMAGE_MB).
    b. await client_oai.describe_image_bytes(...)
-   c. Build fragment:  [image:<filename>] <description>
-3. Return list[dict] with one dict per image:
-   { "type": "image", "title": "<filename>", "description": "<vision description>" }
+   c. Build fragment dict:
+      { "type": "image", "title": "<filename>", "description": "<vision description>" }
+3. Return list[dict] with one dict per image
 
 NOTE: Vision errors keep the record; we substitute a placeholder description.
 """

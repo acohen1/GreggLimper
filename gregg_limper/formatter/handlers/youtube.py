@@ -4,9 +4,9 @@ YouTubeHandler Pipeline
 1. Input slice : List[str] (URLs not already claimed by GIF / image logic)
 2. For each URL
     a. Call YouTube API to get video details.
-    b. Build fragment:  [youtube] <title> — <description>
-3. Return List[dict] with one dict per URL:
-   { "type": "youtube", "title": "<title>", "description": "<description>", "thumbnail": "<thumbnail description>" }
+    b. Build fragment dict:
+       { "type": "youtube", "title": "<title>", "description": "<description>", "thumbnail": "<thumbnail description>" }
+3. Return List[dict] with one dict per URL
 
 NOTE: We tolerate thumbnail-vision failures here and keep title/description.
 """
