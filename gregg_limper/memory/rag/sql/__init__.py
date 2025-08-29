@@ -1,0 +1,1 @@
+"""SQL persistence layer for RAG memory."""

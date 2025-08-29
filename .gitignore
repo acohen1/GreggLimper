@@ -1,0 +1,10 @@
+/glvenv
+gregg_limper/.env
+.venv/
+.env
+__pycache__/
+test.py
+.vscode/
+*.db
+*.sqlite
+.pytest_cache/
