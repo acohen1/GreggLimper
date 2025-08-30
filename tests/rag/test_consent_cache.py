@@ -1,5 +1,4 @@
 import asyncio
-import asyncio
 from collections import deque
 from types import SimpleNamespace
 import datetime
@@ -8,6 +7,7 @@ from gregg_limper.memory.rag import consent
 from gregg_limper.memory.rag import consent as consent_mod
 from gregg_limper.memory.cache.core import GLCache
 from gregg_limper.config import cache as cache_cfg
+from gregg_limper.config import core as core_cfg
 from gregg_limper.memory import rag
 
 
@@ -20,6 +20,10 @@ def test_consent_registry():
     assert asyncio.run(consent.is_opted_in(uid)) is True
     asyncio.run(consent.remove_user(uid))
     assert asyncio.run(consent.is_opted_in(uid)) is False
+
+
+def test_bot_whitelisted_on_init():
+    assert asyncio.run(consent.is_opted_in(core_cfg.BOT_USER_ID)) is True
 
 
 def test_cache_ingestion_gate(monkeypatch):

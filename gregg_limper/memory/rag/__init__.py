@@ -11,6 +11,9 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 import json
 import asyncio
+import time
+
+from gregg_limper.config import core as core_cfg
 
 from .sql import db as _db
 from .sql.repositories import FragmentsRepo as _FragmentsRepo, MetaRepo as _MetaRepo
@@ -40,6 +43,11 @@ __all__ = [
 # Singleton connection + repositories
 _conn = _db.connect()
 _db.migrate(_conn)
+with _conn:
+    _conn.execute(
+        "INSERT OR IGNORE INTO rag_consent(user_id, ts) VALUES(?, ?)",
+        (core_cfg.BOT_USER_ID, time.time()),
+    )
 _db_lock = asyncio.Lock()
 
 _frag_repo = _FragmentsRepo(_conn, _db_lock)

@@ -3,6 +3,7 @@ import datetime
 from types import SimpleNamespace
 
 from gregg_limper.commands.handlers.rag_opt import RagOptInCommand
+from gregg_limper.config import core as core_cfg
 
 
 class FakeMessage(SimpleNamespace):
@@ -48,6 +49,7 @@ def run(coro):
 def test_backfill(monkeypatch):
     user = SimpleNamespace(id=1, display_name="u")
     other = SimpleNamespace(id=2, display_name="o")
+    monkeypatch.setattr(core_cfg, "CHANNEL_IDS", [1, 2])
 
     now = datetime.datetime.utcnow()
 
