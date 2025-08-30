@@ -1,3 +1,5 @@
+"""Async helpers for interacting with the Milvus vector index."""
+
 from __future__ import annotations
 import asyncio
 import threading
@@ -19,7 +21,10 @@ _collection: Collection | None = None
 _collection_loaded = False
 _collection_lock = threading.Lock()
 
+
 def _normalize(v) -> list[float]:
+    """Return a length-normalized embedding as a writable list."""
+
     # NOTE: ``np.asarray`` can return a read-only view when ``v`` exposes a
     # Python buffer (e.g. ``array('f')``).  ``np.nan_to_num`` attempts an
     # in-place modification which then fails with ``ValueError: assignment
@@ -40,6 +45,8 @@ def _normalize(v) -> list[float]:
 
 
 def _get_collection() -> Collection:
+    """Return the singleton Milvus collection instance, connecting if needed."""
+
     global _collection, _collection_loaded
 
     if _collection is not None and _collection_loaded:
@@ -89,6 +96,15 @@ def _get_collection() -> Collection:
 
 
 async def upsert(rid: int, server_id: int, channel_id: int, embedding) -> None:
+    """Insert or update a single embedding in the vector index.
+
+    :param rid: Fragment row id.
+    :param server_id: Discord server (guild) id.
+    :param channel_id: Channel id.
+    :param embedding: Sequence or array-like embedding of length ``rag.EMB_DIM``.
+    :returns: ``None``.
+    """
+
     vec = _normalize(embedding)
 
     def _run() -> None:
@@ -100,6 +116,12 @@ async def upsert(rid: int, server_id: int, channel_id: int, embedding) -> None:
 
 
 async def upsert_many(items: list[tuple[int, int, int, Any]]) -> None:
+    """Batch insert or update multiple embeddings.
+
+    :param items: Iterable of ``(rid, server_id, channel_id, embedding)`` tuples.
+    :returns: ``None``.
+    """
+
     if not items:
         return
 
@@ -127,6 +149,12 @@ async def upsert_many(items: list[tuple[int, int, int, Any]]) -> None:
 
 
 async def delete_many(ids: list[int]) -> None:
+    """Delete multiple embeddings by fragment id.
+
+    :param ids: List of fragment row ids to remove.
+    :returns: ``None``.
+    """
+
     if not ids:
         return
 
@@ -141,6 +169,11 @@ async def delete_many(ids: list[int]) -> None:
 
 
 async def existing_ids() -> Set[int]:
+    """Return the set of fragment ids currently present in the index.
+
+    :returns: Set of row ids stored in the vector index.
+    """
+
     def _run() -> Set[int]:
         col = _get_collection()
         chunk = max(1, milvus.MILVUS_DELETE_CHUNK)
@@ -168,6 +201,11 @@ async def existing_ids() -> Set[int]:
 
 
 async def flush() -> None:
+    """Ensure all pending writes are persisted to the Milvus collection.
+
+    :returns: ``None``.
+    """
+
     def _run() -> None:
         col = _get_collection()
         col.flush()
@@ -178,6 +216,15 @@ async def flush() -> None:
 async def search(
     server_id: int, channel_id: int, query_vec, k: int
 ) -> List[Tuple[int, float]]:
+    """Search for the nearest ``k`` embeddings for ``query_vec``.
+
+    :param server_id: Discord server (guild) id to scope the search.
+    :param channel_id: Channel id to scope the search.
+    :param query_vec: Embedding vector to search with.
+    :param k: Number of nearest neighbors to return.
+    :returns: List of ``(rid, score)`` pairs ordered by similarity.
+    """
+
     vec = _normalize(query_vec)
 
     def _run() -> List[Tuple[int, float]]:

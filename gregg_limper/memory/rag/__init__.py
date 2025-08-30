@@ -99,7 +99,15 @@ async def vector_search(
     query: str,
     k: int = 50,
 ) -> List[Dict[str, Any]]:
-    """Similarity search over stored fragments."""
+    """Similarity search over stored fragments.
+
+    :param server_id: Discord server (guild) id to scope the search.
+    :param channel_id: Channel id to scope the search.
+    :param query: Natural language query to embed and search with.
+    :param k: Maximum number of nearest fragments to return.
+    :returns: Ordered list of fragment dictionaries containing metadata such as
+        ``id``, ``message_id``, ``author_id`` and ``content``.
+    """
     return await _vector_search(
         repo=_frag_repo,
         server_id=server_id,
