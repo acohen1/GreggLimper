@@ -32,9 +32,6 @@ async def _backfill_user_messages(
         - datetime.timedelta(days=rag_cfg.OPT_IN_LOOKBACK_DAYS)
     )
 
-    # Some message sources (unit tests) may use naive datetimes
-    cutoff_naive = cutoff.replace(tzinfo=None)
-
     processed = 0
 
     # Only process channels allowed by the config
@@ -68,7 +65,7 @@ async def _backfill_user_messages(
     # Enumerate candidate messages (opted-in user only, within lookback)
     for channel in channels:
         try:
-            async for msg in channel.history(limit=None, after=cutoff_naive, oldest_first=True):
+            async for msg in channel.history(limit=None, after=cutoff, oldest_first=True):
                 if msg.author.id != user.id:
                     continue
                 # Skip if any fragment already exists for this message_id (idempotent)

@@ -61,7 +61,7 @@ def test_initialize_hydrates_recent_history(monkeypatch):
     monkeypatch.setattr(cache_core.memo, "prune", lambda cid, d: d)
     monkeypatch.setattr(cache_core.memo, "save", lambda cid, d: None)
 
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     messages = [
         FakeMessage(
             id=i,
@@ -109,7 +109,7 @@ def test_initialize_preserves_order_with_slow_formatter(monkeypatch):
     monkeypatch.setattr(cache_core.memo, "prune", lambda cid, d: d)
     monkeypatch.setattr(cache_core.memo, "save", lambda cid, d: None)
 
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     messages = [
         FakeMessage(
             id=i,
@@ -167,7 +167,7 @@ def test_initialize_formats_only_missing_payloads(monkeypatch):
 
     monkeypatch.setattr(asyncio, "create_task", fake_create_task)
 
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     messages = [
         FakeMessage(
             id=i,
