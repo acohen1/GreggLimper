@@ -11,6 +11,7 @@ from ...formatter import format_message
 from ...memory import rag
 from ...memory.rag import consent, purge_user
 from gregg_limper.config import rag as rag_cfg
+from gregg_limper.config import core as core_cfg
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,8 @@ async def _backfill_user_messages(
     # to naive form as well so comparisons don't raise TypeError.
     cutoff_naive = cutoff.replace(tzinfo=None)
     processed = 0
-    channels = guild.text_channels if guild else []
+    # Only process channels allowed by the config
+    channels = ([c for c in guild.text_channels if c.id in core_cfg.CHANNEL_IDS] if guild else [])
     for channel in channels:
         try:
             async for msg in channel.history(
