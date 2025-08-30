@@ -250,7 +250,12 @@ class GLCache:
                 continue
 
             logger.info(f"Fetching history for channel {cid}...")
-            async for msg in channel.history(limit=cache.CACHE_LENGTH, oldest_first=True):
+            history = [
+                msg
+                async for msg in channel.history(limit=cache.CACHE_LENGTH)
+            ]
+            # Returned newest -> oldest; reverse to store oldest -> newest
+            for msg in reversed(history):
                 await self.add_message(cid, msg)
 
             # Prune memo to match deque and persist
