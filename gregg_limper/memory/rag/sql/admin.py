@@ -17,12 +17,12 @@ async def retention_prune(
         cutoff = time.time() - older_than_seconds
         with conn:
             conn.execute(
-                "DELETE FROM fragments_fts WHERE rowid IN (SELECT id FROM fragments WHERE ts < ?)",
+                "DELETE FROM fragments WHERE rowid IN (SELECT id FROM fragments WHERE ts < ?)",
                 (cutoff,),
             )
             cur = conn.execute("DELETE FROM fragments WHERE ts < ?", (cutoff,))
             if vacuum:
-                conn.execute("INSERT INTO fragments_fts(fragments_fts) VALUES('optimize')")
+                conn.execute("INSERT INTO fragments(fragments) VALUES('optimize')")
 
         return cur.rowcount
     

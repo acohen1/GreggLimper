@@ -2,7 +2,7 @@
 SQLite bootstrap and connection helpers
 =======================================
 
- - Database location configured via ``rag.SQL_DB_DIR``.
+- Database location configured via ``rag.SQL_DB_DIR``.
 - WAL + pragmatic PRAGMAs for decent concurrent read perf.
 """
 

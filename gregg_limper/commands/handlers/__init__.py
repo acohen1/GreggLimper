@@ -32,7 +32,11 @@ class CommandHandler(Protocol):
     @staticmethod
     async def handle(client: discord.Client, message: discord.Message, args: str) -> None:
         """
-        Coroutine to handle the command.
+        Coroutine invoked when the command is dispatched.
+
+        :param client: Discord client instance.
+        :param message: Incoming command message.
+        :param args: Raw argument string.
         """
 
 
@@ -40,16 +44,23 @@ _REGISTRY: Dict[str, CommandHandler] = {}
 
 
 def register(cls: CommandHandler):
-    """Decorator that registers a CommandHandler implementation."""
+    """
+    Decorator that registers a ``CommandHandler`` implementation.
+
+    :param cls: Class implementing the handler protocol.
+    :returns: The class unchanged.
+    """
     _REGISTRY[cls.command_str] = cls
     return cls
 
 
 def get(command: str) -> CommandHandler | None:
+    """Return handler class for ``command`` or ``None``."""
     return _REGISTRY.get(command)
 
 
 def all_commands() -> Dict[str, CommandHandler]:
+    """Return copy of the command registry."""
     return dict(_REGISTRY)
 
 
