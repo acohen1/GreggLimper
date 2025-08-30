@@ -16,7 +16,8 @@ async def vector_search(
     query: str,
     k: int = 50,
 ) -> List[Dict[str, Any]]:
-    """Embed the query and search the Milvus vector index.
+    """
+    Embed the query and search the Milvus vector index.
 
     :param repo: Fragment repository used to resolve result ids.
     :param server_id: Discord server (guild) id to scope the search.

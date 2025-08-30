@@ -87,3 +87,47 @@ def test_initialize_hydrates_recent_history(monkeypatch):
     assert [m.id for m in stored] == expected_ids
     assert channel.last_history["limit"] == cache_cfg.CACHE_LENGTH
     assert channel.last_history["oldest_first"] is False
+
+
+def test_initialize_preserves_order_with_slow_formatter(monkeypatch):
+    monkeypatch.setattr(cache_cfg, "CACHE_LENGTH", 5)
+    monkeypatch.setattr(cache_cfg, "INIT_CONCURRENCY", 3)
+    monkeypatch.setattr(cache_core, "TextChannel", FakeChannel)
+
+    async def fake_is_opted_in(uid):
+        return False
+
+    async def fake_format_message(msg):
+        # Sleep inversely proportional to id so completion order differs
+        await asyncio.sleep(0.01 * (5 - msg.id))
+        return {"author": msg.author.display_name, "fragments": []}
+
+    monkeypatch.setattr(cache_core.consent, "is_opted_in", fake_is_opted_in)
+    monkeypatch.setattr(cache_core, "format_message", fake_format_message)
+    monkeypatch.setattr(cache_core.memo, "exists", lambda cid: False)
+    monkeypatch.setattr(cache_core.memo, "load", lambda cid: {})
+    monkeypatch.setattr(cache_core.memo, "prune", lambda cid, d: d)
+    monkeypatch.setattr(cache_core.memo, "save", lambda cid, d: None)
+
+    now = datetime.datetime.utcnow()
+    messages = [
+        FakeMessage(
+            id=i,
+            author=SimpleNamespace(id=1, display_name="u"),
+            created_at=now + datetime.timedelta(seconds=i),
+            channel=SimpleNamespace(id=1),
+            guild=SimpleNamespace(id=1),
+        )
+        for i in range(5)
+    ]
+    channel = FakeChannel(1, messages)
+    client = FakeClient(channel)
+
+    cache_inst = GLCache()
+    cache_inst._caches = {}
+    cache_inst._memo = {}
+
+    asyncio.run(cache_inst.initialize(client, [1]))
+
+    stored = list(cache_inst._caches[1])
+    assert [m.id for m in stored] == [m.id for m in messages]

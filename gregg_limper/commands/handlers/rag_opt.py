@@ -48,9 +48,7 @@ async def _backfill_user_messages(
     sem = asyncio.Semaphore(rag_cfg.BACKFILL_CONCURRENCY)
     tasks: list[asyncio.Task[tuple[discord.Message, int, dict | None]]] = []
 
-    async def _format_bounded(
-        msg: discord.Message, channel_id: int
-    ) -> tuple[discord.Message, int, dict | None]:
+    async def _format_bounded(msg: discord.Message, channel_id: int) -> tuple[discord.Message, int, dict | None]:
         """
         Format one message while respecting concurrency limits.
 
@@ -70,9 +68,7 @@ async def _backfill_user_messages(
     # Enumerate candidate messages (opted-in user only, within lookback)
     for channel in channels:
         try:
-            async for msg in channel.history(
-                limit=None, after=cutoff_naive, oldest_first=True
-            ):
+            async for msg in channel.history(limit=None, after=cutoff_naive, oldest_first=True):
                 if msg.author.id != user.id:
                     continue
                 # Skip if any fragment already exists for this message_id (idempotent)
@@ -80,9 +76,7 @@ async def _backfill_user_messages(
                     continue
                 tasks.append(asyncio.create_task(_format_bounded(msg, channel.id)))
         except Exception:
-            logger.exception(
-                "Failed to iterate channel %s during backfill", channel.id
-            )
+            logger.exception("Failed to iterate channel %s during backfill", channel.id)
 
     # Consume formatter results as they complete; perform upserts sequentially.
     if tasks:

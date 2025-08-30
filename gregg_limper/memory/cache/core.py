@@ -31,6 +31,7 @@ from .utils import _frags_preview
 
 import logging
 import datetime
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,13 @@ class GLCache:
     # WRITE helpers
     # ------------------------------------------------------------------ #
 
-    async def add_message(self, channel_id: int, message_obj: Message, ingest: bool = True) -> None:
+    async def add_message(
+        self,
+        channel_id: int,
+        message_obj: Message,
+        ingest: bool = True,
+        cache_msg: dict | None = None,
+    ) -> None:
         """
         Append *raw* Discord message to that channel's deque and memoize its
         formatted representation. Raises KeyError if channel_id is unknown.
@@ -62,6 +69,8 @@ class GLCache:
         :param channel_id: The ID of the channel the message belongs to.
         :param message_obj: The raw Discord message object to cache.
         :param ingest: Whether to ingest the message into the RAG database.
+        :param cache_msg: Optional pre-formatted representation of ``message_obj``.
+            If provided, ``format_message`` will not be called.
         :returns: ``None``.
         """
         if channel_id not in self._caches:
@@ -108,7 +117,10 @@ class GLCache:
 
         # Memoize if missing
         if not resources["memo"]:
-            self._memo[msg_id] = await format_message(message_obj)
+            if cache_msg is None:
+                self._memo[msg_id] = await format_message(message_obj)
+            else:
+                self._memo[msg_id] = cache_msg
 
         # Ingest into RAG if backing stores are missing
         if ingest and not resources["sqlite"]:
@@ -268,9 +280,40 @@ class GLCache:
                 msg
                 async for msg in channel.history(limit=cache.CACHE_LENGTH)
             ]
-            # Returned newest -> oldest; reverse to store oldest -> newest
-            for msg in reversed(history):
-                await self.add_message(cid, msg)
+            messages = list(reversed(history))  # oldest -> newest
+
+            # Parallelize formatting *while preserving final order (via idx)*
+            sem = asyncio.Semaphore(cache.INIT_CONCURRENCY)
+            tasks: list[asyncio.Task[tuple[int, Message, dict | None]]] = []
+
+            async def _format_bounded(idx: int, msg: Message) -> tuple[int, Message, dict | None]:
+                """Format one message while respecting concurrency limits."""
+                if msg.id in self._memo:
+                    return idx, msg, None
+                async with sem:
+                    try:
+                        cache_msg = await format_message(msg)
+                    except Exception:
+                        logger.exception("Failed to format message %s during init", msg.id)
+                        cache_msg = None
+                return idx, msg, cache_msg
+
+            for idx, msg in enumerate(messages):
+                tasks.append(asyncio.create_task(_format_bounded(idx, msg)))
+
+            # Consume formatter results as they complete; perform upserts sequentially.
+            next_idx = 0
+            results: list[tuple[Message, dict | None] | None] = [None] * len(tasks)
+            for coro in asyncio.as_completed(tasks):
+                idx, msg, cache_msg = await coro
+                results[idx] = (msg, cache_msg)
+                while next_idx < len(results) and results[next_idx] is not None:
+                    m, cm = results[next_idx]
+                    if cm is None:
+                        await self.add_message(cid, m)
+                    else:
+                        await self.add_message(cid, m, cache_msg=cm)
+                    next_idx += 1
 
             # Prune memo to match deque and persist
             memo_dict = {m.id: self._memo[m.id] for m in self._caches[cid]}
