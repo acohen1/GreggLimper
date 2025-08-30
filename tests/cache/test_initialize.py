@@ -131,3 +131,60 @@ def test_initialize_preserves_order_with_slow_formatter(monkeypatch):
 
     stored = list(cache_inst._caches[1])
     assert [m.id for m in stored] == [m.id for m in messages]
+
+
+def test_initialize_formats_only_missing_payloads(monkeypatch):
+    monkeypatch.setattr(cache_cfg, "CACHE_LENGTH", 10)
+    monkeypatch.setattr(cache_core, "TextChannel", FakeChannel)
+
+    async def fake_is_opted_in(uid):
+        return False
+
+    async def fake_format_message(msg):
+        return {"author": msg.author.display_name, "fragments": []}
+
+    monkeypatch.setattr(cache_core.consent, "is_opted_in", fake_is_opted_in)
+    monkeypatch.setattr(cache_core, "format_message", fake_format_message)
+    monkeypatch.setattr(cache_core.memo, "exists", lambda cid: True)
+    monkeypatch.setattr(
+        cache_core.memo,
+        "load",
+        lambda cid: {1: {"author": "u", "fragments": []}},
+    )
+    monkeypatch.setattr(cache_core.memo, "prune", lambda cid, d: d)
+    monkeypatch.setattr(cache_core.memo, "save", lambda cid, d: None)
+
+    created: list[int] = []
+    orig_create_task = asyncio.create_task
+
+    def fake_create_task(coro, *args, **kwargs):
+        msg = getattr(coro, "cr_frame", None)
+        if msg is not None:
+            m = coro.cr_frame.f_locals.get("msg")
+            if m is not None:
+                created.append(m.id)
+        return orig_create_task(coro, *args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_task", fake_create_task)
+
+    now = datetime.datetime.utcnow()
+    messages = [
+        FakeMessage(
+            id=i,
+            author=SimpleNamespace(id=1, display_name="u"),
+            created_at=now + datetime.timedelta(seconds=i),
+            channel=SimpleNamespace(id=1),
+            guild=SimpleNamespace(id=1),
+        )
+        for i in range(1, 4)
+    ]
+    channel = FakeChannel(1, messages)
+    client = FakeClient(channel)
+
+    cache_inst = GLCache()
+    cache_inst._caches = {}
+    cache_inst._memo = {}
+
+    asyncio.run(cache_inst.initialize(client, [1]))
+
+    assert created == [2, 3]

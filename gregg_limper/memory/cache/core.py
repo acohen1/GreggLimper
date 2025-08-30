@@ -265,7 +265,8 @@ class GLCache:
 
         # Populate caches with recent messages (UP TO cache.CACHE_LENGTH)
         for cid in channel_ids:
-            # First seed memo table from on-disk store before fetching
+            # Seed the memo table from on-disk store. This ensures we don’t waste
+            # time re-formatting messages we already have cached payloads for.
             loaded = memo.load(cid) if memo.exists(cid) else {}
             self._memo.update(loaded)
 
@@ -282,14 +283,12 @@ class GLCache:
             ]
             messages = list(reversed(history))  # oldest -> newest
 
-            # Parallelize formatting *while preserving final order (via idx)*
+            # Parallelize formatting with bounded concurrency.
             sem = asyncio.Semaphore(cache.INIT_CONCURRENCY)
             tasks: list[asyncio.Task[tuple[int, Message, dict | None]]] = []
 
             async def _format_bounded(idx: int, msg: Message) -> tuple[int, Message, dict | None]:
                 """Format one message while respecting concurrency limits."""
-                if msg.id in self._memo:
-                    return idx, msg, None
                 async with sem:
                     try:
                         cache_msg = await format_message(msg)
@@ -298,12 +297,28 @@ class GLCache:
                         cache_msg = None
                 return idx, msg, cache_msg
 
+            # Build a results list aligned to message order. Each result slot corresponds to a chronological index.
+            # - If the message is already memoized, mark it as ready immediately.  
+            # - Otherwise, schedule a format task to fill its slot later.
+            results: list[tuple[Message, dict | None] | None] = [None] * len(messages)
             for idx, msg in enumerate(messages):
-                tasks.append(asyncio.create_task(_format_bounded(idx, msg)))
+                if msg.id in self._memo:
+                    results[idx] = (msg, None)
+                else:
+                    tasks.append(asyncio.create_task(_format_bounded(idx, msg)))
 
             # Consume formatter results as they complete; perform upserts sequentially.
             next_idx = 0
-            results: list[tuple[Message, dict | None] | None] = [None] * len(tasks)
+
+            # Flush contiguous ready items at the start (likely memo hits).
+            # This ensures we start populating the cache immediately.
+            while next_idx < len(results) and results[next_idx] is not None:
+                m, _ = results[next_idx]
+                await self.add_message(cid, m)
+                next_idx += 1
+
+            # As formatting tasks finish (possibly out of order), fill their slots.
+            # Every time a gap at `next_idx` becomes ready, flush forward until the next gap.
             for coro in asyncio.as_completed(tasks):
                 idx, msg, cache_msg = await coro
                 results[idx] = (msg, cache_msg)
@@ -315,7 +330,17 @@ class GLCache:
                         await self.add_message(cid, m, cache_msg=cm)
                     next_idx += 1
 
-            # Prune memo to match deque and persist
+            # Final flush: if anything remained unprocessed (e.g. the tail),
+            # walk forward and push those into the cache in order.
+            while next_idx < len(results):
+                m, cm = results[next_idx]
+                if cm is None:
+                    await self.add_message(cid, m)
+                else:
+                    await self.add_message(cid, m, cache_msg=cm)
+                next_idx += 1
+
+            # Reconcile on-disk memo with final deque contents
             memo_dict = {m.id: self._memo[m.id] for m in self._caches[cid]}
             for mid in set(loaded) - set(memo_dict):
                 self._memo.pop(mid, None)
