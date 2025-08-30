@@ -53,7 +53,18 @@ async def _backfill_user_messages(
     cutoff_naive = cutoff.replace(tzinfo=None)
     processed = 0
     # Only process channels allowed by the config
-    channels = ([c for c in guild.text_channels if c.id in core_cfg.CHANNEL_IDS] if guild else [])
+    channels = (
+        [c for c in guild.text_channels if c.id in core_cfg.CHANNEL_IDS]
+        if guild
+        else []
+    )
+    sem = asyncio.Semaphore(rag_cfg.BACKFILL_CONCURRENCY)
+    tasks: list[asyncio.Task[bool]] = []
+
+    async def _bounded_ingest(msg: discord.Message, channel_id: int) -> bool:
+        async with sem:
+            return await _ingest_message(msg, channel_id)
+
     for channel in channels:
         try:
             async for msg in channel.history(
@@ -61,12 +72,19 @@ async def _backfill_user_messages(
             ):
                 if msg.author.id != user.id:
                     continue
-                if await _ingest_message(msg, channel.id):
-                    processed += 1
+                if await rag.message_exists(msg.id):
+                    continue
+                tasks.append(asyncio.create_task(_bounded_ingest(msg, channel.id)))
         except Exception:
             logger.exception(
                 "Failed to iterate channel %s during backfill", channel.id
             )
+
+    if tasks:
+        for coro in asyncio.as_completed(tasks):
+            if await coro:
+                processed += 1
+
     return processed
 
 # ----------------------------- Command Definitions ----------------------------- #

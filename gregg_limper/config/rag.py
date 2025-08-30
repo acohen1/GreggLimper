@@ -11,3 +11,4 @@ class Rag:
     OPT_IN_LOOKBACK_DAYS: int = int(os.getenv("RAG_OPT_IN_LOOKBACK_DAYS", "180"))
     BACKFILL_BATCH_SIZE: int = int(os.getenv("RAG_BACKFILL_BATCH_SIZE", "100"))
     BACKFILL_RATE_LIMIT: float = float(os.getenv("RAG_BACKFILL_RATE_LIMIT", "1"))
+    BACKFILL_CONCURRENCY: int = int(os.getenv("RAG_BACKFILL_CONCURRENCY", "10"))
