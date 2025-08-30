@@ -30,6 +30,7 @@ from . import memo
 from .utils import _frags_preview
 
 import logging
+import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -113,12 +114,15 @@ class GLCache:
         # Ingest into RAG if backing stores are missing
         if ingest and not resources["sqlite"]:
             try:
+                created_at = message_obj.created_at
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=datetime.timezone.utc)
                 await rag.ingest_cache_message(
                     server_id=message_obj.guild.id if message_obj.guild else 0,
                     channel_id=channel_id,
                     message_id=msg_id,
                     author_id=message_obj.author.id,
-                    ts=message_obj.created_at.timestamp(),
+                    ts=created_at.timestamp(),
                     cache_message=self._memo[msg_id],
                 )
             except Exception:

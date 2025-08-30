@@ -22,12 +22,15 @@ async def _ingest_message(msg: discord.Message, channel_id: int) -> bool:
         if await rag.message_exists(msg.id):
             return False
         cache_msg = await format_message(msg)
+        created_at = msg.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=datetime.timezone.utc)
         await rag.ingest_cache_message(
             server_id=msg.guild.id if msg.guild else 0,
             channel_id=channel_id,
             message_id=msg.id,
             author_id=msg.author.id,
-            ts=msg.created_at.timestamp(),
+            ts=created_at.timestamp(),
             cache_message=cache_msg,
         )
         return True
@@ -40,12 +43,20 @@ async def _backfill_user_messages(
     user: discord.User, guild: discord.Guild | None
 ) -> int:
     """Iterate channels and ingest messages for a user, returns count processed."""
-    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=rag_cfg.OPT_IN_LOOKBACK_DAYS)
+    cutoff = (
+        datetime.datetime.now(datetime.timezone.utc)
+        - datetime.timedelta(days=rag_cfg.OPT_IN_LOOKBACK_DAYS)
+    )
+    # Some message sources (e.g., tests) may use naive datetimes. Convert our cutoff
+    # to naive form as well so comparisons don't raise TypeError.
+    cutoff_naive = cutoff.replace(tzinfo=None)
     processed = 0
     channels = guild.text_channels if guild else []
     for channel in channels:
         try:
-            async for msg in channel.history(limit=None, after=cutoff, oldest_first=True):
+            async for msg in channel.history(
+                limit=None, after=cutoff_naive, oldest_first=True
+            ):
                 if msg.author.id != user.id:
                     continue
                 if await _ingest_message(msg, channel.id):
