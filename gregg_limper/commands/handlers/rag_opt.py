@@ -15,56 +15,61 @@ from gregg_limper.config import core as core_cfg
 
 logger = logging.getLogger(__name__)
 
-# ----------------------------- Ingest & Backfill Helpers ----------------------------- #
-
-async def _ingest_message(msg: discord.Message, channel_id: int) -> bool:
-    """Return True if successfully ingested, False otherwise."""
-    try:
-        if await rag.message_exists(msg.id):
-            return False
-        cache_msg = await format_message(msg)
-        created_at = msg.created_at
-        if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=datetime.timezone.utc)
-        await rag.ingest_cache_message(
-            server_id=msg.guild.id if msg.guild else 0,
-            channel_id=channel_id,
-            message_id=msg.id,
-            author_id=msg.author.id,
-            ts=created_at.timestamp(),
-            cache_message=cache_msg,
-        )
-        return True
-    except Exception:
-        logger.exception("Failed to ingest message %s during backfill", msg.id)
-        return False
-
+# ----------------------------- Backfill Helper ----------------------------- #
 
 async def _backfill_user_messages(
     user: discord.User, guild: discord.Guild | None
 ) -> int:
-    """Iterate channels and ingest messages for a user, returns count processed."""
+    """
+    Backfill a user's past messages into RAG.
+
+    - Filters by lookback window and allowed channels.
+    - Skips messages already in storage (idempotent).
+    - Runs formatting concurrently (bounded).
+    - Upserts sequentially to avoid DB lock contention.
+
+    Returns the number of ingested messages.
+    """
     cutoff = (
         datetime.datetime.now(datetime.timezone.utc)
         - datetime.timedelta(days=rag_cfg.OPT_IN_LOOKBACK_DAYS)
     )
-    # Some message sources (e.g., tests) may use naive datetimes. Convert our cutoff
-    # to naive form as well so comparisons don't raise TypeError.
+
+    # Some message sources (unit tests) may use naive datetimes
     cutoff_naive = cutoff.replace(tzinfo=None)
+
     processed = 0
+
     # Only process channels allowed by the config
     channels = (
         [c for c in guild.text_channels if c.id in core_cfg.CHANNEL_IDS]
         if guild
         else []
     )
+
+    # Parallelize *formatting only* with a bounded semaphore
     sem = asyncio.Semaphore(rag_cfg.BACKFILL_CONCURRENCY)
-    tasks: list[asyncio.Task[bool]] = []
+    tasks: list[asyncio.Task[tuple[discord.Message, int, dict | None]]] = []
 
-    async def _bounded_ingest(msg: discord.Message, channel_id: int) -> bool:
+    async def _format_bounded(msg: discord.Message, channel_id: int) -> tuple[discord.Message, int, dict | None]:
+        """
+        Format a single message under concurrency control.
+
+        Returns
+        -------
+        tuple
+            ``(msg, channel_id, cache_msg_or_None)`` where the third element
+            is ``None`` if formatting failed (logged) or the message should be skipped.
+        """
         async with sem:
-            return await _ingest_message(msg, channel_id)
+            try:
+                cache_msg = await format_message(msg)
+            except Exception:
+                logger.exception("Failed to format message %s during backfill", msg.id)
+                cache_msg = None
+        return msg, channel_id, cache_msg
 
+    # Enumerate candidate messages (opted-in user only, within lookback)
     for channel in channels:
         try:
             async for msg in channel.history(
@@ -72,18 +77,37 @@ async def _backfill_user_messages(
             ):
                 if msg.author.id != user.id:
                     continue
+                # Skip if any fragment already exists for this message_id (idempotent)
                 if await rag.message_exists(msg.id):
                     continue
-                tasks.append(asyncio.create_task(_bounded_ingest(msg, channel.id)))
+                tasks.append(asyncio.create_task(_format_bounded(msg, channel.id)))
         except Exception:
             logger.exception(
                 "Failed to iterate channel %s during backfill", channel.id
             )
 
+    # Consume formatter results as they complete; perform upserts sequentially.
     if tasks:
         for coro in asyncio.as_completed(tasks):
-            if await coro:
+            msg, channel_id, cache_msg = await coro
+            if cache_msg is None:
+                continue
+            try:
+                created_at = msg.created_at
+                # Normalize to UTC if naive to avoid platform-specific timestamp() errors
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=datetime.timezone.utc)
+                await rag.ingest_cache_message(
+                    server_id=msg.guild.id if msg.guild else 0,
+                    channel_id=channel_id,
+                    message_id=msg.id,
+                    author_id=msg.author.id,
+                    ts=created_at.timestamp(),
+                    cache_message=cache_msg,
+                )
                 processed += 1
+            except Exception:
+                logger.exception("Failed to ingest message %s during backfill", msg.id)
 
     return processed
 
@@ -91,6 +115,15 @@ async def _backfill_user_messages(
 
 @register
 class RagOptInCommand:
+    """
+    Slash command: ``/rag_opt_in``
+
+    Effect
+    ------
+    - Adds the caller to the RAG consent registry.
+    - Queues a non-blocking historical backfill across allowed channels.
+    - Notifies the user when the backfill completes with a processed count.
+    """
     command_str = "rag_opt_in"
 
     @staticmethod
@@ -110,6 +143,14 @@ class RagOptInCommand:
 
 @register
 class RagOptOutCommand:
+    """
+    Slash command: ``/rag_opt_out``
+
+    Effect
+    ------
+    - Removes the caller from the RAG consent registry.
+    - Purges all of the caller's data from both SQL and the vector index.
+    """
     command_str = "rag_opt_out"
 
     @staticmethod
@@ -121,6 +162,13 @@ class RagOptOutCommand:
 
 @register
 class RagStatusCommand:
+    """
+    Slash command: ``/rag_status``
+
+    Effect
+    ------
+    - Reports whether the caller is currently opted in to RAG ingestion.
+    """
     command_str = "rag_status"
 
     @staticmethod
