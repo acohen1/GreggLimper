@@ -51,12 +51,17 @@ _REGISTRY: Dict[str, SliceHandler] = {}
 
 
 def register(cls: SliceHandler):
-    """Decorator that stores the handler in the global registry."""
+    """Decorator that stores the handler in the global registry.
+
+    :param cls: Handler class to register.
+    :returns: The class unchanged.
+    """
     _REGISTRY[cls.media_type] = cls
     return cls
 
 
 def get(media_type: str) -> SliceHandler | None:
+    """Return handler class for ``media_type`` or ``None``."""
     return _REGISTRY.get(media_type)
 
 

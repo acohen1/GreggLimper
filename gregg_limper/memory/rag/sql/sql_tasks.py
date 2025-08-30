@@ -88,5 +88,9 @@ async def _enforce_spec(conn, lock) -> None:
     _last_run_ts = now
 
 async def run(conn, lock) -> None:
-    """Run one maintenance pass over stored embeddings."""
+    """Run one maintenance pass over stored embeddings.
+
+    :param conn: SQLite connection.
+    :param lock: Asyncio lock protecting ``conn``.
+    """
     await _enforce_spec(conn, lock)

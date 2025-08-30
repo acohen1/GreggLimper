@@ -87,10 +87,11 @@ class YouTubeHandler:
 
     @staticmethod
     async def handle(urls: List[str]) -> List[YouTubeFragment]:
-        """
-        Process a batch of YouTube URLs and return ``YouTubeFragment`` objects.
-        Each fragment contains video metadata and an optional vision-generated
-        ``thumbnail_caption``.
+        """Process YouTube URLs into :class:`YouTubeFragment` objects.
+
+        :param urls: List of YouTube video URLs.
+        :returns: Fragments with video metadata and optional
+            ``thumbnail_caption``.
         """
         logger.info("Processing %d YouTube URLs", len(urls))
 
@@ -130,5 +131,6 @@ class YouTubeHandler:
                     logger.warning("Failed to process YouTube at %s: %s", url, e)
                     return YouTubeFragment(title=url, description=f"(error: {e})", url=url)
 
+            # Process URLs concurrently
             return await asyncio.gather(*(_process(u) for u in urls))
 

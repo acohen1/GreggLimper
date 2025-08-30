@@ -39,9 +39,10 @@ class ImageHandler:
 
     @staticmethod
     async def handle(images: list[Attachment]) -> list[ImageFragment]:
-        """
-        Process a batch of image attachments and return ``ImageFragment`` objects.
-        Each fragment contains ``title`` and a vision-generated ``caption``.
+        """Process image attachments into :class:`ImageFragment` objects.
+
+        :param images: List of Discord attachments.
+        :returns: Fragments with ``title`` and vision-generated ``caption``.
         """
 
         async def _process(att: Attachment) -> ImageFragment:
@@ -53,6 +54,7 @@ class ImageHandler:
                 desc = f"(vision error: {e})"
             return ImageFragment(title=att.filename, url=att.url, caption=desc)
 
+        # Process attachments concurrently
         return await asyncio.gather(*(_process(a) for a in images))
 
 

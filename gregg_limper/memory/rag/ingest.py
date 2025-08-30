@@ -28,13 +28,16 @@ async def project_and_upsert(
     ts: float,
     cache_message: Dict[str, Any],
 ) -> None:
-    """
-    Project a cache-formatted message into normalized fragments and upsert into the SQL database and vector index.
+    """Upsert a cache-formatted message into SQL and vector stores.
 
-    Clean storage:
-      - No modality tokens in `content` (store text only).
-      - Modality is captured by the `type` column.
-      - title/url are optional (NULL when unknown).
+    :param repo: Fragment repository used for persistence.
+    :param server_id: Discord server id.
+    :param channel_id: Channel id.
+    :param message_id: Source message id.
+    :param author_id: Author id for provenance.
+    :param ts: Message timestamp (Unix seconds).
+    :param cache_message: Dict produced by :func:`formatter.format_message`.
+    :returns: ``None``.
     """
     frags = cache_message.get("fragments") or []
 
@@ -61,6 +64,7 @@ async def project_and_upsert(
     tasks = [embed(p["content"]) for p in prep]
     results = []
     if tasks:
+        # Embed fragments concurrently; network failures yield exceptions
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
     for p, vec in zip(prep, results):
@@ -86,13 +90,22 @@ async def project_and_upsert(
 
         # Upsert into SQL db
         await repo.insert_or_update_fragment((
-            server_id, channel_id, message_id, author_id, ts,
-            p["content"], p["typ"],
+            server_id,
+            channel_id,
+            message_id,
+            author_id,
+            ts,
+            p["content"],
+            p["typ"],
             (cf.title or None),
             (cf.url or None),
             media_id,
-              emb, rag.EMB_MODEL_ID, rag.EMB_DIM,
-            p["i"], p["content_h"], embed_ts,
+            emb,
+            rag.EMB_MODEL_ID,
+            rag.EMB_DIM,
+            p["i"],
+            p["content_h"],
+            embed_ts,
         ))
 
         # Insert into vector index
@@ -100,7 +113,7 @@ async def project_and_upsert(
         if rid is not None:
             logger.info("Upserted fragment into database (type=%s)", p["typ"])
             try:
-                await vector_index.upsert(rid, server_id, channel_id, vec)
+                await vector_index.upsert(rid, server_id, channel_id, vec)  # Milvus write
                 logger.info("Upserted fragment into vector index (type=%s)", p["typ"])
             except Exception as e:
                 logger.error(

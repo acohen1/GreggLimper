@@ -16,6 +16,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 async def embed(text: str) -> np.ndarray:
+    """Return embedding vector for ``text``.
+
+    :param text: Input string to embed.
+    :returns: ``np.ndarray`` of shape ``(EMB_DIM,)``. On error returns zeros.
+    """
     try:
         return await embed_text(text)
     except Exception as e:
@@ -23,12 +28,15 @@ async def embed(text: str) -> np.ndarray:
         return np.zeros((rag.EMB_DIM,), dtype=np.float32)
 
 def to_bytes(vec: np.ndarray) -> bytes:
+    """Serialize an embedding array to raw bytes."""
     return vec.astype(np.float32).tobytes()
 
 
 def from_bytes(blob: bytes) -> np.ndarray:
+    """Deserialize raw bytes into a ``np.ndarray`` embedding."""
     return np.frombuffer(blob, dtype=np.float32)
 
 def blake16(s: str) -> str:
+    """Return 16-byte hex digest of ``s`` using BLAKE2b."""
     return hashlib.blake2b((s or "").encode("utf-8"), digest_size=16).hexdigest()
 

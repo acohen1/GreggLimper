@@ -64,6 +64,7 @@ class GLCache:
         :param channel_id: The ID of the channel the message belongs to.
         :param message_obj: The raw Discord message object to cache.
         :param ingest: Whether to ingest the message into the RAG database.
+        :returns: ``None``.
         """
         if channel_id not in self._caches:
             raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
@@ -115,6 +116,7 @@ class GLCache:
         if ingest and not resources["sqlite"]:
             try:
                 created_at = message_obj.created_at
+                # Discord test fixtures may have naive timestamps; normalize to UTC
                 if created_at.tzinfo is None:
                     created_at = created_at.replace(tzinfo=datetime.timezone.utc)
                 await rag.ingest_cache_message(
@@ -124,7 +126,7 @@ class GLCache:
                     author_id=message_obj.author.id,
                     ts=created_at.timestamp(),
                     cache_message=self._memo[msg_id],
-                )
+                )  # crosses into SQLite + vector stores
             except Exception:
                 logger.exception("RAG ingestion failed for message %s", msg_id)
 
@@ -154,13 +156,11 @@ class GLCache:
 
     @staticmethod
     def _serialize(cache_msg: dict, mode: Mode) -> dict:
-        """
-        Internal helper to serialize a cached message.
+        """Serialize a cached message for a specific consumer.
 
-        - mode="llm": minimal form for prompt construction (omits IDs/URLs).
-        - mode="full": complete form for persistence or downstream consumers.
-
-        Returns a dict with "author" and "fragments".
+        :param cache_msg: Memoized message record.
+        :param mode: ``"llm"`` for prompt form or ``"full"`` for persistence.
+        :returns: Dict with ``author`` and ``fragments`` fields.
         """
         frags = cache_msg.get("fragments", [])
         if mode == "llm":
@@ -174,10 +174,11 @@ class GLCache:
         }
 
     def _iter_msgs(self, channel_id: int, n: int | None = None) -> list[Message]:
-        """
-        Return up to ``n`` most recent messages from a channel, oldest -> newest.
+        """Return up to ``n`` most recent messages from a channel.
 
-        If ``n`` is None or >= cache length, all messages are returned.
+        :param channel_id: Discord channel id.
+        :param n: Optional limit. ``None`` or ≥ cache length returns all.
+        :returns: Messages ordered oldest -> newest.
         """
         if channel_id not in self._caches:
             raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
@@ -191,8 +192,10 @@ class GLCache:
         return list(dq)[len(dq) - n :]  # tail, still oldest -> newest
 
     def get_raw_messages(self, channel_id: int) -> List[Message]:
-        """
-        Return raw Discord.Message objects [oldest -> newest].
+        """Return raw :class:`discord.Message` objects.
+
+        :param channel_id: Discord channel id.
+        :returns: Messages ordered oldest -> newest.
         """
         if channel_id not in self._caches:
             raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
@@ -202,32 +205,39 @@ class GLCache:
     # into a single method with a "mode" parameter (e.g., "llm", "full", "debug").
 
     def get_messages_llm(self, channel_id: int, n: int | None = None) -> list[dict]:
-        """
-        Return the ``n`` most-recent messages formatted for LLM consumption.
+        """Return recent messages formatted for LLM prompts.
 
-        Messages are returned oldest -> newest. Each fragment dict is produced
-        on demand via ``Fragment.to_llm`` and thus omits fields like ``id`` or
-        ``url`` that are unnecessary for prompting.
+        :param channel_id: Discord channel id.
+        :param n: Optional max number of messages to return.
+        :returns: List of serialized message dicts (oldest -> newest).
         """
-        return [self._serialize(self._memo[m.id], "llm") for m in self._iter_msgs(channel_id, n)]
+        return [
+            self._serialize(self._memo[m.id], "llm")
+            for m in self._iter_msgs(channel_id, n)
+        ]
 
     def get_messages_full(self, channel_id: int, n: int | None = None) -> list[dict]:
-        """
-        Return the ``n`` most-recent messages with all fragment details.
+        """Return recent messages with full fragment details.
 
-        Messages are returned oldest -> newest. Each fragment dict is produced
-        on demand via ``Fragment.to_dict`` and therefore retains all fields
-        for downstream consumers requiring full fidelity.
+        :param channel_id: Discord channel id.
+        :param n: Optional max number of messages to return.
+        :returns: List of serialized message dicts (oldest -> newest).
         """
-        return [self._serialize(self._memo[m.id], "full") for m in self._iter_msgs(channel_id, n)]
+        return [
+            self._serialize(self._memo[m.id], "full")
+            for m in self._iter_msgs(channel_id, n)
+        ]
 
     # ------------------------------------------------------------------ #
     # INITIALIZATION
     # ------------------------------------------------------------------ #
 
     async def initialize(self, client: Client, channel_ids: list[int]) -> None:
-        """
-        Fetch and cache recent messages from Discord channels.
+        """Hydrate caches from Discord history.
+
+        :param client: Discord client for API calls.
+        :param channel_ids: Channels to populate.
+        :returns: ``None``.
         """
         if self._caches and set(self._caches.keys()) == set(channel_ids):
             logger.info("Cache already initialized with same channel IDs. Skipping.")
@@ -272,8 +282,10 @@ class GLCache:
     # ------------------------------------------------------------------ #
 
     def clear_cache(self, channel_id: int) -> None:
-        """
-        Remove all cached messages and their memoized fragments for a channel.
+        """Remove all cached messages for a channel.
+
+        :param channel_id: Discord channel id.
+        :returns: ``None``.
         """
         if channel_id not in self._caches:
             raise KeyError(f"Channel ID {channel_id} is not configured for caching.")

@@ -100,9 +100,10 @@ class GIFHandler:
 
     @staticmethod
     async def handle(urls: List[str]) -> List[GIFFragment]:
-        """
-        Process a batch of GIF URLs and return ``GIFFragment`` objects.
-        Each fragment contains a cleaned ``title`` and vision-generated ``caption``.
+        """Process GIF URLs into :class:`GIFFragment` objects.
+
+        :param urls: List of candidate GIF URLs.
+        :returns: Fragments with cleaned ``title`` and vision-generated ``caption``.
         """
         logger.info("Processing %d GIF URLs", len(urls))
 
@@ -118,4 +119,5 @@ class GIFHandler:
                     logger.warning("Failed to process GIF at %s: %s", url, e)
                     return GIFFragment(title=url, url=url, caption=f"(vision error: {e})")
 
+            # Process URLs concurrently
             return await asyncio.gather(*(_process(u) for u in urls))

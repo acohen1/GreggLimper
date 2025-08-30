@@ -20,15 +20,11 @@ logger = logging.getLogger(__name__)
 async def _backfill_user_messages(
     user: discord.User, guild: discord.Guild | None
 ) -> int:
-    """
-    Backfill a user's past messages into RAG.
+    """Backfill a user's past messages into RAG.
 
-    - Filters by lookback window and allowed channels.
-    - Skips messages already in storage (idempotent).
-    - Runs formatting concurrently (bounded).
-    - Upserts sequentially to avoid DB lock contention.
-
-    Returns the number of ingested messages.
+    :param user: Discord user being processed.
+    :param guild: Guild context or ``None`` in DMs.
+    :returns: Number of ingested messages.
     """
     cutoff = (
         datetime.datetime.now(datetime.timezone.utc)
@@ -51,15 +47,15 @@ async def _backfill_user_messages(
     sem = asyncio.Semaphore(rag_cfg.BACKFILL_CONCURRENCY)
     tasks: list[asyncio.Task[tuple[discord.Message, int, dict | None]]] = []
 
-    async def _format_bounded(msg: discord.Message, channel_id: int) -> tuple[discord.Message, int, dict | None]:
-        """
-        Format a single message under concurrency control.
+    async def _format_bounded(
+        msg: discord.Message, channel_id: int
+    ) -> tuple[discord.Message, int, dict | None]:
+        """Format one message while respecting concurrency limits.
 
-        Returns
-        -------
-        tuple
-            ``(msg, channel_id, cache_msg_or_None)`` where the third element
-            is ``None`` if formatting failed (logged) or the message should be skipped.
+        :param msg: Discord message instance.
+        :param channel_id: Channel id containing the message.
+        :returns: ``(msg, channel_id, cache_msg_or_None)`` tuple; ``cache_msg``
+            is ``None`` on failure or skip.
         """
         async with sem:
             try:
@@ -127,14 +123,24 @@ class RagOptInCommand:
     command_str = "rag_opt_in"
 
     @staticmethod
-    async def handle(client: discord.Client, message: discord.Message, args: str) -> None:
+    async def handle(
+        client: discord.Client, message: discord.Message, args: str
+    ) -> None:
+        """Opt the caller into RAG and trigger historical backfill.
+
+        :param client: Discord client instance (unused).
+        :param message: Command message invoking the opt-in.
+        :param args: Raw argument string (unused).
+        """
         added = await consent.add_user(message.author.id)
         if added:
             await message.channel.send("Opted in to RAG. Backfill queued.")
 
             async def _backfill_and_notify() -> None:
                 processed = await _backfill_user_messages(message.author, message.guild)
-                await message.channel.send(f"Backfill complete. Ingested {processed} messages.")
+                await message.channel.send(
+                    f"Backfill complete. Ingested {processed} messages."
+                )
 
             asyncio.create_task(_backfill_and_notify())
         else:
@@ -154,7 +160,15 @@ class RagOptOutCommand:
     command_str = "rag_opt_out"
 
     @staticmethod
-    async def handle(client: discord.Client, message: discord.Message, args: str) -> None:
+    async def handle(
+        client: discord.Client, message: discord.Message, args: str
+    ) -> None:
+        """Remove caller from consent registry and purge their data.
+
+        :param client: Discord client instance (unused).
+        :param message: Command message invoking the opt-out.
+        :param args: Raw argument string (unused).
+        """
         await consent.remove_user(message.author.id)
         await purge_user(message.author.id)
         await message.channel.send("Opted out and data purged from RAG.")
@@ -172,7 +186,15 @@ class RagStatusCommand:
     command_str = "rag_status"
 
     @staticmethod
-    async def handle(client: discord.Client, message: discord.Message, args: str) -> None:
+    async def handle(
+        client: discord.Client, message: discord.Message, args: str
+    ) -> None:
+        """Report the caller's current RAG consent state.
+
+        :param client: Discord client instance (unused).
+        :param message: Command message invoking the status check.
+        :param args: Raw argument string (unused).
+        """
         opted = await consent.is_opted_in(message.author.id)
         msg = "You are opted in." if opted else "You are not opted in."
         await message.channel.send(msg)

@@ -58,17 +58,22 @@ def stable_media_id(
     message_id: int,
     source_idx: int,
 ) -> str:
-    """
-    Deterministic, namespaced media id:
+    """Return deterministic, namespaced media id.
 
-    Priority:
-      1) youtube:<video_id>          (if type=youtube and URL present)
-      2) dc:<attachments/...>        (Discord CDN path)
-      3) url:<blake16(normalized_url)>
-      4) msg:<message_id>:<idx>:<type> (for text/no-url fragments)
-      5) fallback:<blake16(all provenance)>
+    Priority
+    --------
+    1. ``youtube:<video_id>`` if ``type=youtube`` and URL present.
+    2. ``dc:<attachments/...>`` for Discord CDN paths.
+    3. ``url:<blake16(normalized_url)>`` for other URLs.
+    4. ``msg:<message_id>:<idx>:<type>`` for fragments without URLs.
+    5. ``fallback:<blake16(all provenance)>`` as absolute fallback.
 
-    This is stable across reposts when the underlying asset (e.g., YouTube ID or CDN path) is the same.
+    :param cf: Serialized fragment dict.
+    :param server_id: Discord server id.
+    :param channel_id: Channel id.
+    :param message_id: Source message id.
+    :param source_idx: Index within source message.
+    :returns: Stable identifier string.
     """
     typ = (cf.get("type") or "").strip()
     url = _normalize_url(cf.get("url"))

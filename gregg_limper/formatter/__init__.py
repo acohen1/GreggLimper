@@ -25,20 +25,19 @@ __all__ = [
 
 
 async def format_message(msg: Message) -> dict:
-    """
-    Takes a Discord :class:`Message`, classifies it, and composes media fragments.
+    """Classify and compose message fragments.
 
-    Returns a dictionary where ``fragments`` is a list of ``Fragment`` objects.
-    The objects can later be serialized via :meth:`Fragment.to_dict` for RAG
-    ingestion or :meth:`Fragment.to_llm` for LLM context building.
+    :param msg: Discord message to process.
+    :returns: Dict with ``author`` and list of ``Fragment`` objects.
+
+    Example
+    -------
+    .. code-block:: python
 
         {
             "author": "display_name",
             "fragments": [Fragment(...), ...]
         }
-
-    - ``author``: the display name of the message author.
-    - ``fragments``: list of :class:`Fragment` instances (see ``model.py``).
     """
 
     classified_msg = classify(msg)
