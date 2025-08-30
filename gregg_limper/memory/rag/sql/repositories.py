@@ -19,7 +19,8 @@ class FragmentsRepo:
         self._lock = lock
 
     async def insert_or_update_fragment(self, row: tuple[Any, ...]) -> None:
-        """Insert or update a fragment row.
+        """
+        Insert or update a fragment row.
 
         :param row: Column values matching the table schema.
         """
@@ -49,7 +50,8 @@ class FragmentsRepo:
             await asyncio.to_thread(_run)  # blocking sqlite call
 
     async def update_embedding(self, rid: int, emb: bytes, model: str, dim: int) -> None:
-        """Update embedding fields for a fragment.
+        """
+        Update embedding fields for a fragment.
 
         :param rid: Fragment row id.
         :param emb: Serialized embedding blob.
@@ -158,7 +160,8 @@ class MetaRepo:
         self._lock = lock
 
     async def set_user_profile(self, user_id: int, blob: str) -> None:
-        """Upsert a JSON profile for ``user_id``.
+        """
+        Upsert a JSON profile for ``user_id``.
 
         :param user_id: Discord user id.
         :param blob: JSON string representing the profile.
@@ -176,7 +179,8 @@ class MetaRepo:
             await asyncio.to_thread(_run)
 
     async def get_user_profile(self, user_id: int) -> Optional[str]:
-        """Return JSON profile blob for ``user_id`` or ``None``.
+        """
+        Return JSON profile blob for ``user_id`` or ``None``.
 
         :param user_id: Discord user id.
         :returns: Stored JSON string or ``None``.
@@ -191,7 +195,8 @@ class MetaRepo:
             return await asyncio.to_thread(_query)
 
     async def set_server_style(self, server_id: int, blob: str) -> None:
-        """Upsert a style/config blob for ``server_id``.
+        """
+        Upsert a style/config blob for ``server_id``.
 
         :param server_id: Discord server id.
         :param blob: JSON string representing the style.
@@ -209,7 +214,8 @@ class MetaRepo:
             await asyncio.to_thread(_run)
 
     async def get_server_style(self, server_id: int) -> Optional[str]:
-        """Return style/config blob for ``server_id`` or ``None``.
+        """
+        Return style/config blob for ``server_id`` or ``None``.
 
         :param server_id: Discord server id.
         :returns: Stored JSON string or ``None``.
@@ -224,7 +230,8 @@ class MetaRepo:
             return await asyncio.to_thread(_query)
 
     async def set_channel_summary(self, channel_id: int, summary: str) -> None:
-        """Upsert summary text for a channel.
+        """
+        Upsert summary text for a channel.
 
         :param channel_id: Channel id.
         :param summary: Summary text to store.
@@ -242,7 +249,8 @@ class MetaRepo:
             await asyncio.to_thread(_run)
 
     async def get_channel_summary(self, channel_id: int) -> str:
-        """Return summary text for a channel or empty string.
+        """
+        Return summary text for a channel or empty string.
 
         :param channel_id: Channel id.
         :returns: Stored summary text.
@@ -265,7 +273,8 @@ class ConsentRepo:
         self._lock = lock
 
     async def is_opted_in(self, user_id: int) -> bool:
-        """Return ``True`` if ``user_id`` is present in consent table.
+        """
+        Return ``True`` if ``user_id`` is present in consent table.
 
         :param user_id: Discord user id.
         :returns: ``True`` if user has opted in.
@@ -279,7 +288,8 @@ class ConsentRepo:
             return await asyncio.to_thread(_query)
 
     async def add_user(self, user_id: int) -> bool:
-        """Insert ``user_id`` into consent table.
+        """
+        Insert ``user_id`` into consent table.
 
         :param user_id: Discord user id.
         :returns: ``True`` if a new row was added.
@@ -295,7 +305,8 @@ class ConsentRepo:
             return await asyncio.to_thread(_run)
 
     async def remove_user(self, user_id: int) -> None:
-        """Delete ``user_id`` from consent table.
+        """
+        Delete ``user_id`` from consent table.
 
         :param user_id: Discord user id.
         :returns: ``None``.

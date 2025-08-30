@@ -45,7 +45,8 @@ def _strip_urls(text: str) -> str:
 # --------------------------------------------------------------------- #
 
 def classify(msg: Message) -> Dict[str, Any]:
-    """Classify a message into media slices.
+    """
+    Classify a message into media slices.
 
     :param msg: Discord message to analyze.
     :returns: Mapping of media type to slice data, e.g.:

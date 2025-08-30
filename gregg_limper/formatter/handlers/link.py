@@ -28,7 +28,8 @@ class LinkHandler:
 
     @staticmethod
     async def handle(urls: List[str]) -> List[LinkFragment]:
-        """Process URLs into :class:`LinkFragment` objects.
+        """
+        Process URLs into :class:`LinkFragment` objects.
 
         :param urls: List of generic hyperlink URLs.
         :returns: Fragments containing the original ``url`` and summary

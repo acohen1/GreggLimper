@@ -39,7 +39,8 @@ class ImageHandler:
 
     @staticmethod
     async def handle(images: list[Attachment]) -> list[ImageFragment]:
-        """Process image attachments into :class:`ImageFragment` objects.
+        """
+        Process image attachments into :class:`ImageFragment` objects.
 
         :param images: List of Discord attachments.
         :returns: Fragments with ``title`` and vision-generated ``caption``.

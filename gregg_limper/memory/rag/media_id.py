@@ -58,7 +58,8 @@ def stable_media_id(
     message_id: int,
     source_idx: int,
 ) -> str:
-    """Return deterministic, namespaced media id.
+    """
+    Return deterministic, namespaced media id.
 
     Priority
     --------

@@ -19,7 +19,8 @@ _vec_task: asyncio.Task | None = None
 
 
 async def start(interval: float = 3600, *, conn=None, lock=None) -> Tuple[asyncio.Task, asyncio.Task]:
-    """Run maintenance once and schedule periodic cycles.
+    """
+    Run maintenance once and schedule periodic cycles.
 
     :param interval: Seconds between maintenance passes.
     :param conn: Optional SQLite connection for testing.

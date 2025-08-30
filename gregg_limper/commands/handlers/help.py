@@ -13,7 +13,8 @@ class HelpCommand:
     async def handle(
         client: discord.Client, message: discord.Message, args: str
     ) -> None:
-        """Send a comma-separated list of registered commands.
+        """
+        Send a comma-separated list of registered commands.
 
         :param client: Discord client instance (unused).
         :param message: Incoming command message.

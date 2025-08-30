@@ -20,7 +20,8 @@ class TextHandler:
 
     @staticmethod
     async def handle(text: str) -> List[TextFragment]:
-        """Wrap non-empty message text in a :class:`TextFragment`.
+        """
+        Wrap non-empty message text in a :class:`TextFragment`.
 
         :param text: Raw message content.
         :returns: List containing a single fragment or empty list.

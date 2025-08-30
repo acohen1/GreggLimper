@@ -16,7 +16,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 async def embed(text: str) -> np.ndarray:
-    """Return embedding vector for ``text``.
+    """
+    Return embedding vector for ``text``.
 
     :param text: Input string to embed.
     :returns: ``np.ndarray`` of shape ``(EMB_DIM,)``. On error returns zeros.

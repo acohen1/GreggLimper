@@ -51,7 +51,8 @@ _REGISTRY: Dict[str, SliceHandler] = {}
 
 
 def register(cls: SliceHandler):
-    """Decorator that stores the handler in the global registry.
+    """
+    Decorator that stores the handler in the global registry.
 
     :param cls: Handler class to register.
     :returns: The class unchanged.

@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 async def _backfill_user_messages(
     user: discord.User, guild: discord.Guild | None
 ) -> int:
-    """Backfill a user's past messages into RAG.
+    """
+    Backfill a user's past messages into RAG.
 
     :param user: Discord user being processed.
     :param guild: Guild context or ``None`` in DMs.
@@ -50,7 +51,8 @@ async def _backfill_user_messages(
     async def _format_bounded(
         msg: discord.Message, channel_id: int
     ) -> tuple[discord.Message, int, dict | None]:
-        """Format one message while respecting concurrency limits.
+        """
+        Format one message while respecting concurrency limits.
 
         :param msg: Discord message instance.
         :param channel_id: Channel id containing the message.
@@ -126,7 +128,8 @@ class RagOptInCommand:
     async def handle(
         client: discord.Client, message: discord.Message, args: str
     ) -> None:
-        """Opt the caller into RAG and trigger historical backfill.
+        """
+        Opt the caller into RAG and trigger historical backfill.
 
         :param client: Discord client instance (unused).
         :param message: Command message invoking the opt-in.
@@ -163,7 +166,8 @@ class RagOptOutCommand:
     async def handle(
         client: discord.Client, message: discord.Message, args: str
     ) -> None:
-        """Remove caller from consent registry and purge their data.
+        """
+        Remove caller from consent registry and purge their data.
 
         :param client: Discord client instance (unused).
         :param message: Command message invoking the opt-out.
@@ -189,7 +193,8 @@ class RagStatusCommand:
     async def handle(
         client: discord.Client, message: discord.Message, args: str
     ) -> None:
-        """Report the caller's current RAG consent state.
+        """
+        Report the caller's current RAG consent state.
 
         :param client: Discord client instance (unused).
         :param message: Command message invoking the status check.

@@ -110,7 +110,8 @@ async def vector_search(
 
 
 async def fetch_vectors_for_index(*, conn=None, lock=None):
-    """Fetch all stored fragment vectors.
+    """
+    Fetch all stored fragment vectors.
 
     Optional ``conn`` and ``lock`` parameters allow callers to supply their own
     database connection and lock, primarily for testing.
@@ -186,7 +187,8 @@ async def set_channel_summary(channel_id: int, summary: str) -> None:
 # --- Purge -------------------------------------------------------------------
 
 async def purge_user(author_id: int) -> int:
-    """Delete all fragments for ``author_id`` from SQL and vector index.
+    """
+    Delete all fragments for ``author_id`` from SQL and vector index.
 
     Returns number of fragments removed from the SQL store.
     """

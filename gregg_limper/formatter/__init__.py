@@ -25,7 +25,8 @@ __all__ = [
 
 
 async def format_message(msg: Message) -> dict:
-    """Classify and compose message fragments.
+    """
+    Classify and compose message fragments.
 
     :param msg: Discord message to process.
     :returns: Dict with ``author`` and list of ``Fragment`` objects.

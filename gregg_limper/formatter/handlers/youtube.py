@@ -87,7 +87,8 @@ class YouTubeHandler:
 
     @staticmethod
     async def handle(urls: List[str]) -> List[YouTubeFragment]:
-        """Process YouTube URLs into :class:`YouTubeFragment` objects.
+        """
+        Process YouTube URLs into :class:`YouTubeFragment` objects.
 
         :param urls: List of YouTube video URLs.
         :returns: Fragments with video metadata and optional

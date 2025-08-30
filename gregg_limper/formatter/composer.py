@@ -16,7 +16,8 @@ ORDER = ["text", "image", "gif", "link", "youtube"]
 
 
 async def compose(message: Message, classified: Dict[str, Any]) -> List[Fragment]:
-    """Aggregate media-slice outputs into :class:`Fragment` objects.
+    """
+    Aggregate media-slice outputs into :class:`Fragment` objects.
 
     :param message: Source Discord message.
     :param classified: Media slices produced by :func:`classifier.classify`.
@@ -46,7 +47,8 @@ async def compose(message: Message, classified: Dict[str, Any]) -> List[Fragment
 
 
 def serialize_fragments(fragments: List[Fragment]) -> List[dict]:
-    """Convert ``Fragment`` objects into JSON-serializable dictionaries.
+    """
+    Convert ``Fragment`` objects into JSON-serializable dictionaries.
 
     :param fragments: List of fragment objects.
     :returns: Corresponding list of ``dict`` objects.

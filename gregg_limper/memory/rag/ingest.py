@@ -28,7 +28,8 @@ async def project_and_upsert(
     ts: float,
     cache_message: Dict[str, Any],
 ) -> None:
-    """Upsert a cache-formatted message into SQL and vector stores.
+    """
+    Upsert a cache-formatted message into SQL and vector stores.
 
     :param repo: Fragment repository used for persistence.
     :param server_id: Discord server id.

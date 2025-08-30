@@ -100,7 +100,8 @@ class GIFHandler:
 
     @staticmethod
     async def handle(urls: List[str]) -> List[GIFFragment]:
-        """Process GIF URLs into :class:`GIFFragment` objects.
+        """
+        Process GIF URLs into :class:`GIFFragment` objects.
 
         :param urls: List of candidate GIF URLs.
         :returns: Fragments with cleaned ``title`` and vision-generated ``caption``.

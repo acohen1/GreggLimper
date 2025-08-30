@@ -55,7 +55,8 @@ class GLCache:
     # ------------------------------------------------------------------ #
 
     async def add_message(self, channel_id: int, message_obj: Message, ingest: bool = True) -> None:
-        """Append *raw* Discord message to that channel's deque and memoize its
+        """
+        Append *raw* Discord message to that channel's deque and memoize its
         formatted representation. Raises KeyError if channel_id is unknown.
 
         :param channel_id: The ID of the channel the message belongs to.
@@ -153,7 +154,8 @@ class GLCache:
 
     @staticmethod
     def _serialize(cache_msg: dict, mode: Mode) -> dict:
-        """Serialize a cached message for a specific consumer.
+        """
+        Serialize a cached message for a specific consumer.
 
         :param cache_msg: Memoized message record.
         :param mode: ``"llm"`` for prompt form or ``"full"`` for persistence.
@@ -171,7 +173,8 @@ class GLCache:
         }
 
     def _iter_msgs(self, channel_id: int, n: int | None = None) -> list[Message]:
-        """Return up to ``n`` most recent messages from a channel.
+        """
+        Return up to ``n`` most recent messages from a channel.
 
         :param channel_id: Discord channel id.
         :param n: Optional limit. ``None`` or ≥ cache length returns all.
@@ -189,7 +192,8 @@ class GLCache:
         return list(dq)[len(dq) - n :]  # tail, still oldest -> newest
 
     def get_raw_messages(self, channel_id: int) -> List[Message]:
-        """Return raw :class:`discord.Message` objects.
+        """
+        Return raw :class:`discord.Message` objects.
 
         :param channel_id: Discord channel id.
         :returns: Messages ordered oldest -> newest.
@@ -202,7 +206,8 @@ class GLCache:
     # into a single method with a "mode" parameter (e.g., "llm", "full", "debug").
 
     def get_messages_llm(self, channel_id: int, n: int | None = None) -> list[dict]:
-        """Return recent messages formatted for LLM prompts.
+        """
+        Return recent messages formatted for LLM prompts.
 
         :param channel_id: Discord channel id.
         :param n: Optional max number of messages to return.
@@ -214,7 +219,8 @@ class GLCache:
         ]
 
     def get_messages_full(self, channel_id: int, n: int | None = None) -> list[dict]:
-        """Return recent messages with full fragment details.
+        """
+        Return recent messages with full fragment details.
 
         :param channel_id: Discord channel id.
         :param n: Optional max number of messages to return.
@@ -230,7 +236,8 @@ class GLCache:
     # ------------------------------------------------------------------ #
 
     async def initialize(self, client: Client, channel_ids: list[int]) -> None:
-        """Hydrate caches from Discord history.
+        """
+        Hydrate caches from Discord history.
 
         :param client: Discord client for API calls.
         :param channel_ids: Channels to populate.
@@ -279,7 +286,8 @@ class GLCache:
     # ------------------------------------------------------------------ #
 
     def clear_cache(self, channel_id: int) -> None:
-        """Remove all cached messages for a channel.
+        """
+        Remove all cached messages for a channel.
 
         :param channel_id: Discord channel id.
         :returns: ``None``.

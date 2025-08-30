@@ -208,7 +208,8 @@ _FRAG_REGISTRY: Dict[str, type[Fragment]] = {
 }
 
 def fragment_from_dict(data: Dict[str, Any]) -> Fragment:
-    """Instantiate a concrete :class:`Fragment` from a serialized dict.
+    """
+    Instantiate a concrete :class:`Fragment` from a serialized dict.
 
     :param data: Serialized fragment dictionary.
     :returns: Constructed :class:`Fragment` subclass.
