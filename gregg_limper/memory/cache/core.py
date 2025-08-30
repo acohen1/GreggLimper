@@ -269,13 +269,12 @@ class GLCache:
             # time re-formatting messages we already have cached payloads for.
             loaded = memo.load(cid) if memo.exists(cid) else {}
             self._memo.update(loaded)
-
-            # Fetch the diff
+            
+            # Grab the history from Discord
             channel = client.get_channel(cid)
             if not isinstance(channel, TextChannel):
                 logger.warning(f"Channel {cid} is not a text channel or not found. Skipping.")
                 continue
-
             logger.info(f"Fetching history for channel {cid}...")
             history = [
                 msg
@@ -283,7 +282,7 @@ class GLCache:
             ]
             messages = list(reversed(history))  # oldest -> newest
 
-            # Parallelize formatting with bounded concurrency.
+            # Begin formatting parallelization with bounded concurrency
             sem = asyncio.Semaphore(cache.INIT_CONCURRENCY)
             tasks: list[asyncio.Task[tuple[int, Message, dict | None]]] = []
 
@@ -307,11 +306,9 @@ class GLCache:
                 else:
                     tasks.append(asyncio.create_task(_format_bounded(idx, msg)))
 
-            # Consume formatter results as they complete; perform upserts sequentially.
-            next_idx = 0
-
             # Flush contiguous ready items at the start (likely memo hits).
             # This ensures we start populating the cache immediately.
+            next_idx = 0
             while next_idx < len(results) and results[next_idx] is not None:
                 m, _ = results[next_idx]
                 await self.add_message(cid, m)
