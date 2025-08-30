@@ -6,7 +6,7 @@ import asyncio
 from typing import Tuple
 
 from gregg_limper.maintenance import startup as _startup, shutdown as _shutdown
-from gregg_limper.config import Config
+from gregg_limper.config import rag
 from .sql import sql_tasks
 from .vector import vector_tasks
 from . import _conn as _default_conn, _db_lock as _default_lock
@@ -31,18 +31,21 @@ async def start(interval: float = 3600, *, conn=None, lock=None) -> Tuple[asynci
     lock = lock or _default_lock
 
     # Run one cycle immediately
+    logger.info("Starting SQL maintenance (interval=%ds)", rag.MAINTENANCE_INTERVAL)
     await sql_tasks.run(conn, lock)
+
+    logger.info("Starting vector maintenance (interval=%ds)", rag.MAINTENANCE_INTERVAL)
     await vector_tasks.run(conn, lock)
 
     if not _sql_task or _sql_task.done():
         async def _sql_loop():
-            logger.info("Starting SQL maintenance (interval=%ds)", Config.MAINTENANCE_INTERVAL)
+            logger.info("Starting SQL maintenance (interval=%ds)", rag.MAINTENANCE_INTERVAL)
             await sql_tasks.run(conn, lock)
         _sql_task = await _startup(_sql_loop, interval)
 
     if not _vec_task or _vec_task.done():
         async def _vec_loop():
-            logger.info("Starting vector maintenance (interval=%ds)", Config.MAINTENANCE_INTERVAL)
+            logger.info("Starting vector maintenance (interval=%ds)", rag.MAINTENANCE_INTERVAL)
             await vector_tasks.run(conn, lock)
         _vec_task = await _startup(_vec_loop, interval)
 

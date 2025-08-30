@@ -73,7 +73,17 @@ class FragmentsRepo:
 
         async with self._lock:
             return await asyncio.to_thread(_query)
+        
+    async def message_exists(self, message_id: int) -> bool:
+        """Return True if any fragment exists for the given message id."""
+        sql = "SELECT 1 FROM fragments WHERE message_id=? LIMIT 1"
 
+        def _query() -> bool:
+            return self.conn.execute(sql, (message_id,)).fetchone() is not None
+        
+        async with self._lock:
+            return await asyncio.to_thread(_query)
+        
     async def rows_recent(
         self,
         server_id: int,
@@ -105,6 +115,19 @@ class FragmentsRepo:
         """
         def _query():
             return self.conn.execute(sql, ids).fetchall()
+
+        async with self._lock:
+            return await asyncio.to_thread(_query)
+
+    async def fetch_vectors_for_index(self) -> Sequence[Tuple[int, int, int, bytes]]:
+        sql = "SELECT id, server_id, channel_id, embedding FROM fragments"
+
+        def _query() -> list[tuple[int, int, int, bytes]]:
+            rows = self.conn.execute(sql).fetchall()
+            return [
+                (int(r["id"]), int(r["server_id"]), int(r["channel_id"]), r["embedding"])
+                for r in rows
+            ]
 
         async with self._lock:
             return await asyncio.to_thread(_query)

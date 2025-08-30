@@ -1,6 +1,6 @@
 from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Collection, utility
 import numpy as np, random, string
-from gregg_limper.config import Config
+from gregg_limper.config import milvus
 
 def _rand_name(prefix="tmp"):
     return f"{prefix}_" + "".join(random.choice(string.ascii_lowercase) for _ in range(8))
@@ -21,7 +21,7 @@ def _gpu_index_candidates(metric="L2"):
 
 def validate_connection() -> None:
     """Ensure Milvus is reachable and GPU-capable by creating a tiny GPU index."""
-    connections.connect(alias="default", uri=f"http://{Config.MILVUS_HOST}:{Config.MILVUS_PORT}")
+    connections.connect(alias="default", uri=f"http://{milvus.MILVUS_HOST}:{milvus.MILVUS_PORT}")
     _ = utility.get_server_version()  # connectivity check
 
     dim = 64

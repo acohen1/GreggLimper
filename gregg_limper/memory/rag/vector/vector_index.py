@@ -13,19 +13,24 @@ from pymilvus import (
     utility,
 )
 
-from gregg_limper.config import Config
+from gregg_limper.config import milvus, rag
 
 _collection: Collection | None = None
 _collection_loaded = False
 _collection_lock = threading.Lock()
 
 def _normalize(v) -> list[float]:
-    v = np.asarray(v, dtype=np.float32)
-    if v.shape != (Config.EMB_DIM,):
+    # NOTE: ``np.asarray`` can return a read-only view when ``v`` exposes a
+    # Python buffer (e.g. ``array('f')``).  ``np.nan_to_num`` attempts an
+    # in-place modification which then fails with ``ValueError: assignment
+    # destination is read-only``. We create a writable copy up-front to avoid
+    # this issue.
+    v = np.array(v, dtype=np.float32, copy=True)
+    if v.shape != (rag.EMB_DIM,):
         v = v.reshape(-1)
-        if v.shape[0] != Config.EMB_DIM:
+        if v.shape[0] != rag.EMB_DIM:
             raise ValueError(
-                f"Expected embedding of dim {Config.EMB_DIM}, got {v.shape[0]}"
+                f"Expected embedding of dim {rag.EMB_DIM}, got {v.shape[0]}"
             )
     np.nan_to_num(v, copy=False)
     n = float(np.linalg.norm(v))
@@ -45,14 +50,14 @@ def _get_collection() -> Collection:
             return _collection
 
         connections.connect(
-            alias="default", uri=f"http://{Config.MILVUS_HOST}:{Config.MILVUS_PORT}"
+            alias="default", uri=f"http://{milvus.MILVUS_HOST}:{milvus.MILVUS_PORT}"
         )
-        name = Config.MILVUS_COLLECTION
+        name = milvus.MILVUS_COLLECTION
 
         index_params = {
             "index_type": "IVF_FLAT",  # GPU controlled server-side
             "metric_type": "IP",
-            "params": {"nlist": Config.MILVUS_NLIST or 1024},
+            "params": {"nlist": milvus.MILVUS_NLIST or 1024},
         }
 
         if not utility.has_collection(name):
@@ -63,7 +68,7 @@ def _get_collection() -> Collection:
                 FieldSchema(name="server_id", dtype=DataType.INT64),
                 FieldSchema(name="channel_id", dtype=DataType.INT64),
                 FieldSchema(
-                    name="embedding", dtype=DataType.FLOAT_VECTOR, dim=Config.EMB_DIM
+                      name="embedding", dtype=DataType.FLOAT_VECTOR, dim=rag.EMB_DIM
                 ),
             ]
             schema = CollectionSchema(fields, description="Fragment embeddings")
@@ -112,7 +117,7 @@ async def upsert_many(items: list[tuple[int, int, int, Any]]) -> None:
     def _run() -> None:
         col = _get_collection()
         # Delete existing rows in batches to avoid overly long expressions
-        chunk = Config.MILVUS_DELETE_CHUNK
+        chunk = milvus.MILVUS_DELETE_CHUNK
         for i in range(0, len(rids), chunk):
             ids = rids[i : i + chunk]
             col.delete(f"rid in {ids}")
@@ -127,7 +132,7 @@ async def delete_many(ids: list[int]) -> None:
 
     def _run() -> None:
         col = _get_collection()
-        chunk = Config.MILVUS_DELETE_CHUNK
+        chunk = milvus.MILVUS_DELETE_CHUNK
         for i in range(0, len(ids), chunk):
             col.delete(f"rid in {ids[i:i+chunk]}")
 
@@ -138,7 +143,7 @@ async def delete_many(ids: list[int]) -> None:
 async def existing_ids() -> Set[int]:
     def _run() -> Set[int]:
         col = _get_collection()
-        chunk = max(1, Config.MILVUS_DELETE_CHUNK)
+        chunk = max(1, milvus.MILVUS_DELETE_CHUNK)
         offset = 0
         ids: Set[int] = set()
         while True:
@@ -181,14 +186,13 @@ async def search(
         res = col.search(
             data=[vec],
             anns_field="embedding",
-            search_params={"metric_type": "IP", "params": {"nprobe": Config.MILVUS_NPROBE}},
+            search_params={"metric_type": "IP", "params": {"nprobe": milvus.MILVUS_NPROBE}},
             limit=k,
             expr=expr,
             consistency_level="Strong",
         )
         hits = res[0] if res else []
         return [(int(h.id), float(h.score)) for h in hits]
-
 
     return await asyncio.to_thread(_run)
 

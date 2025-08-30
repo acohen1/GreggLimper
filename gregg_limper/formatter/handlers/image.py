@@ -3,7 +3,7 @@ ImageHandler
 ============
 1. Input slice  : List[discord.Attachment] (non-GIF images).
 2. For each attachment
-   a. Download bytes (≤ Config.MAX_IMAGE_MB).
+   a. Download bytes (≤ core.MAX_IMAGE_MB).
    b. await client_oai.describe_image_bytes(...)
    c. Build :class:`ImageFragment`:
       ``ImageFragment(title="<filename>", caption="<vision caption>")``
@@ -17,7 +17,7 @@ from typing import List
 import aiohttp, asyncio
 from discord import Attachment
 from . import register
-from ...config import Config
+from ...config import core
 from ...clients.oai import describe_image_bytes
 from ..model import ImageFragment
 
@@ -45,7 +45,7 @@ class ImageHandler:
         """
 
         async def _process(att: Attachment) -> ImageFragment:
-            blob = await ImageHandler._fetch_bytes(att.url, Config.MAX_IMAGE_MB)
+            blob = await ImageHandler._fetch_bytes(att.url, core.MAX_IMAGE_MB)
             try:
                 desc = await describe_image_bytes(blob, mime=att.content_type or "image/png")
             except Exception as e:

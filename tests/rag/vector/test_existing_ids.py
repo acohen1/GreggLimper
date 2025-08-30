@@ -1,6 +1,6 @@
 import asyncio
 
-from gregg_limper.config import Config
+from gregg_limper.config import milvus
 from gregg_limper.memory.rag.vector import vector_index
 
 
@@ -19,7 +19,7 @@ def test_existing_ids_queries_with_limit(monkeypatch):
     fake = FakeCollection()
     monkeypatch.setattr(vector_index, "_get_collection", lambda: fake)
     # Force a small chunk size to exercise pagination
-    monkeypatch.setattr(Config, "MILVUS_DELETE_CHUNK", 2, raising=False)
+    monkeypatch.setattr(milvus, "MILVUS_DELETE_CHUNK", 2, raising=False)
 
     ids = asyncio.run(vector_index.existing_ids())
     assert ids == {0, 1, 2, 3, 4}

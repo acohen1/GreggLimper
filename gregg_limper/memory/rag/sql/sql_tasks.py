@@ -13,7 +13,7 @@ import asyncio
 import logging
 import time
 
-from gregg_limper.config import Config
+from gregg_limper.config import rag
 from ..embeddings import embed, to_bytes
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ async def _enforce_spec(conn, lock) -> None:
         )
         return conn.execute(
             sql,
-            (_last_run_ts, Config.EMB_MODEL_ID, Config.EMB_DIM, Config.EMB_DIM * 4),
+              (_last_run_ts, rag.EMB_MODEL_ID, rag.EMB_DIM, rag.EMB_DIM * 4),
         ).fetchall()
 
     async with lock:
@@ -50,9 +50,9 @@ async def _enforce_spec(conn, lock) -> None:
         last_ts = row["last_embedded_ts"]
 
         needs_update = last_ts <= _last_run_ts
-        if model != Config.EMB_MODEL_ID or dim != Config.EMB_DIM:
+        if model != rag.EMB_MODEL_ID or dim != rag.EMB_DIM:
             needs_update = True
-        elif len(emb) != Config.EMB_DIM * 4:
+        elif len(emb) != rag.EMB_DIM * 4:
             needs_update = True
         elif not emb or not any(emb):
             needs_update = True
@@ -62,24 +62,24 @@ async def _enforce_spec(conn, lock) -> None:
 
         try:
             vec = await embed(content or "")
-            if vec.size != Config.EMB_DIM:
+            if vec.size != rag.EMB_DIM:
                 logger.warning(
                     "Re-embed produced %s dims for id=%s (expected %s)",
                     vec.size,
                     rid,
-                    Config.EMB_DIM,
+                    rag.EMB_DIM,
                 )
                 continue
             new_blob = to_bytes(vec)
         except Exception as e:  # pragma: no cover - network/embedding errors
             logger.error("Embedding refresh failed for id=%s err=%s", rid, e)
-            new_blob = b"\x00" * (Config.EMB_DIM * 4)
+            new_blob = b"\x00" * (rag.EMB_DIM * 4)
 
         def _update():
             with conn:
                 conn.execute(
                     "UPDATE fragments SET embedding=?, emb_model=?, emb_dim=?, last_embedded_ts=? WHERE id=?",
-                    (new_blob, Config.EMB_MODEL_ID, Config.EMB_DIM, now, rid),
+                      (new_blob, rag.EMB_MODEL_ID, rag.EMB_DIM, now, rid),
                 )
 
         async with lock:

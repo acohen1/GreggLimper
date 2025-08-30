@@ -7,7 +7,7 @@ and upserts via the repositories.
 """
 from __future__ import annotations
 from typing import Any, Dict
-from gregg_limper.config import Config
+from gregg_limper.config import rag
 from .embeddings import embed, to_bytes, blake16
 from .media_id import stable_media_id
 from .vector import vector_index
@@ -29,7 +29,7 @@ async def project_and_upsert(
     cache_message: Dict[str, Any],
 ) -> None:
     """
-    Project a cache-formatted message into normalized fragments and upsert.
+    Project a cache-formatted message into normalized fragments and upsert into the SQL database and vector index.
 
     Clean storage:
       - No modality tokens in `content` (store text only).
@@ -70,7 +70,7 @@ async def project_and_upsert(
                 "Embed failed (message_id=%s idx=%s type=%s err=%s); using zero-vector",
                 message_id, p["i"], p["typ"], vec,
             )
-            vec = np.zeros(Config.EMB_DIM, dtype=np.float32)
+            vec = np.zeros(rag.EMB_DIM, dtype=np.float32)
             embed_ts = 0.0
 
         emb = to_bytes(vec)
@@ -84,19 +84,24 @@ async def project_and_upsert(
             source_idx=p["i"],
         )
 
+        # Upsert into SQL db
         await repo.insert_or_update_fragment((
             server_id, channel_id, message_id, author_id, ts,
             p["content"], p["typ"],
             (cf.title or None),
             (cf.url or None),
             media_id,
-            emb, Config.EMB_MODEL_ID, Config.EMB_DIM,
+              emb, rag.EMB_MODEL_ID, rag.EMB_DIM,
             p["i"], p["content_h"], embed_ts,
         ))
+
+        # Insert into vector index
         rid = await repo.lookup_fragment_id(message_id, p["i"], p["typ"], p["content_h"])
         if rid is not None:
+            logger.info("Upserted fragment into database (type=%s)", p["typ"])
             try:
                 await vector_index.upsert(rid, server_id, channel_id, vec)
+                logger.info("Upserted fragment into vector index (type=%s)", p["typ"])
             except Exception as e:
                 logger.error(
                     "Vector index upsert failed (message_id=%s idx=%s type=%s err=%s)",

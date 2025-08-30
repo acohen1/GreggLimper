@@ -11,7 +11,7 @@ Use case:
 
 from __future__ import annotations
 import discord
-from gregg_limper.config import Config
+from gregg_limper.config import core, local_llm
 from gregg_limper.clients import oai, ollama
 from .prompt import build_sys_prompt
 from .cache_adapter import build_history
@@ -19,10 +19,10 @@ from .cache_adapter import build_history
 async def dispatch(message: discord.Message) -> str:
     """Send to the selected provider."""
     sys_prompt = await build_sys_prompt(message)
-    cache_msgs = await build_history(message.channel.id, Config.CONTEXT_LENGTH)
+    cache_msgs = await build_history(message.channel.id, core.CONTEXT_LENGTH)
     messages = [{"role": "system", "content": sys_prompt}, *cache_msgs]
 
-    if Config.USE_LOCAL:
-        return await ollama.chat(messages, model=Config.LOCAL_MODEL_ID)
+    if local_llm.USE_LOCAL:
+        return await ollama.chat(messages, model=local_llm.LOCAL_MODEL_ID)
     else:
-        return await oai.chat(messages, model=Config.MSG_MODEL_ID)
+        return await oai.chat(messages, model=core.MSG_MODEL_ID)

@@ -201,4 +201,21 @@ __all__ = [
     "LinkFragment",
 ]
 
+# Mapping of fragment type string to dataclass for deserialization
+_FRAG_REGISTRY: Dict[str, type[Fragment]] = {
+    cls.__dataclass_fields__["type"].default: cls  # type: ignore[index]
+    for cls in Fragment.__subclasses__()
+}
 
+def fragment_from_dict(data: Dict[str, Any]) -> Fragment:
+    """Instantiate a concrete :class:`Fragment` from a serialized dict."""
+    typ = data.get("type")
+    frag_cls = _FRAG_REGISTRY.get(typ)
+    if frag_cls is None:
+        raise ValueError(f"Unknown fragment type: {typ}")
+    kwargs = {k: v for k, v in data.items() if k not in {"type", "id"}}
+    frag = frag_cls(**kwargs)
+    frag.id = data.get("id", "")
+    return frag
+
+__all__.append("fragment_from_dict")

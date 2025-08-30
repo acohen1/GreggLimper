@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 import types, sys
 
-from gregg_limper.config import Config
+from gregg_limper.config import rag
 
 # Provide a stub pymilvus module before importing vector components
 pymilvus_stub = types.SimpleNamespace(
@@ -24,7 +24,7 @@ from gregg_limper.memory.rag.sql import sql_tasks
 
 def _insert_fragment(conn, content: str) -> None:
     """Insert a fragment row with the given content."""
-    vec = np.arange(Config.EMB_DIM, dtype=np.float32)
+    vec = np.arange(rag.EMB_DIM, dtype=np.float32)
     blob = vec.tobytes()
     row = (
         1,
@@ -38,8 +38,8 @@ def _insert_fragment(conn, content: str) -> None:
         "",
         content,
         blob,
-        Config.EMB_MODEL_ID,
-        Config.EMB_DIM,
+          rag.EMB_MODEL_ID,
+          rag.EMB_DIM,
         0,
         content,
         0.0,

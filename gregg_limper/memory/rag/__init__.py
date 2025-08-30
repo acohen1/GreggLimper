@@ -20,7 +20,9 @@ from .sql.admin import retention_prune as _retention_prune, vacuum as _vacuum
 # Limit the public surface (keeps star-imports clean)
 __all__ = [
     "ingest_cache_message",
+    "message_exists",
     "vector_search",
+    "fetch_vectors_for_index",
     "channel_summary",
     "user_profile",
     "server_stylesheet",
@@ -42,6 +44,12 @@ _frag_repo = _FragmentsRepo(_conn, _db_lock)
 _meta_repo = _MetaRepo(_conn, _db_lock)
 
 # --- Public async-friendly API ----------------------------------------------
+
+async def message_exists(message_id: int) -> bool:
+    """
+    Return True if a given message exists in the SQL database.
+    """
+    return await _frag_repo.message_exists(message_id)
 
 async def ingest_cache_message(
     server_id: int,
@@ -89,6 +97,16 @@ async def vector_search(
         query=query,
         k=k,
     )
+
+
+async def fetch_vectors_for_index(*, conn=None, lock=None):
+    """Fetch all stored fragment vectors.
+
+    Optional ``conn`` and ``lock`` parameters allow callers to supply their own
+    database connection and lock, primarily for testing.
+    """
+    repo = _frag_repo if conn is None or lock is None else _FragmentsRepo(conn, lock)
+    return await repo.fetch_vectors_for_index()
 
 
 # --- Metadata ---------------------------------------------------------------

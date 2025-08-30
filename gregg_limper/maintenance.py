@@ -26,6 +26,7 @@ async def startup(task_fn: Callable[[], Awaitable[None]], interval: float) -> as
     """
 
     async def _periodic() -> None:
+        await asyncio.sleep(interval)   # delay initial loop
         while True:
             try:
                 await task_fn()

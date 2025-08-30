@@ -10,40 +10,28 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Iterable
-
 from ..embeddings import from_bytes
+from .. import fetch_vectors_for_index
 from . import vector_index
 
 logger = logging.getLogger(__name__)
-
-async def _all_fragment_vectors(conn, lock) -> Iterable[tuple[int, int, int, bytes]]:
-    """Fetch all fragment vectors from the SQL store."""
-
-    def _rows():
-        sql = "SELECT id, server_id, channel_id, embedding FROM fragments"
-        return conn.execute(sql).fetchall()
-
-    async with lock:
-        return await asyncio.to_thread(_rows)
 
 
 async def _sync_index(conn, lock) -> None:
     """Ensure fragment vectors are in sync with Milvus."""
 
-    rows = await _all_fragment_vectors(conn, lock)
+    rows = await fetch_vectors_for_index(conn=conn, lock=lock)
     existing = await vector_index.existing_ids()
 
     items = []
     seen: set[int] = set()
-    for row in rows:
-        rid = int(row["id"])
+    for rid, server_id, channel_id, blob in rows:
+        rid = int(rid)
         seen.add(rid)
-        blob = row["embedding"]
         if not blob or rid in existing:
             continue
         vec = from_bytes(blob)
-        items.append((rid, int(row["server_id"]), int(row["channel_id"]), vec))
+        items.append((rid, int(server_id), int(channel_id), vec))
 
     if items:
         await vector_index.upsert_many(items)

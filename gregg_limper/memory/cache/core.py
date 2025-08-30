@@ -9,42 +9,28 @@ Memo table (dict) keyed by Discord message id (formatted payload)
       demand for downstream consumers.
 """
 
-from typing import Any, List, Tuple, Literal, Iterable
-from discord import Message, TextChannel, User, Member, Role, Attachment, File, Client
+from typing import Any, Iterable, List, Literal, Tuple
 from collections import deque
-import textwrap
+from discord import (
+    Attachment,
+    Client,
+    File,
+    Member,
+    Message,
+    Role,
+    TextChannel,
+    User,
+)
 
-from gregg_limper.config import Config
+from gregg_limper.config import cache
 from gregg_limper.formatter import format_message
+from .. import rag
+from . import memo
+from .utils import _frags_preview
 
 import logging
 
 logger = logging.getLogger(__name__)
-
-# ---------- local logging helpers ----------
-
-def _frag_summary(frag, *, width: int = 20) -> str:
-    """Return a compact one-line summary for logs: e.g., text:'Hello…'."""
-    d = frag.to_llm()  # lean dict
-    t = d.get("type", "?")
-    val = d.get("description") or d.get("caption") or d.get("title") or ""
-    if not val:
-        return t
-    return f"{t}:'{textwrap.shorten(str(val), width=width, placeholder='…')}'"
-
-
-def _frags_preview(frags, *, width_each: int = 20, max_total_chars: int = 200) -> str:
-    """Join multiple summaries and cap total length to avoid noisy logs."""
-    parts = []
-    total = 0
-    for f in frags:
-        s = _frag_summary(f, width=width_each)
-        if total + len(s) + (2 if parts else 0) > max_total_chars:
-            parts.append("…")
-            break
-        parts.append(s)
-        total += len(s) + (2 if parts else 0)
-    return ", ".join(parts)
 
 # ---------- GLCache ------------------------
 
@@ -66,13 +52,16 @@ class GLCache:
 
     # ------------------------------------------------------------------ #
     # WRITE helpers
-    # Note: these methods are async to allow for message formatting
     # ------------------------------------------------------------------ #
 
-    async def add_message(self, channel_id: int, message_obj: Message) -> None:
+    async def add_message(self, channel_id: int, message_obj: Message, ingest: bool = True) -> None:
         """
         Append *raw* Discord message to that channel's deque and memoize its
         formatted representation. Raises KeyError if channel_id is unknown.
+
+        :param channel_id: The ID of the channel the message belongs to.
+        :param message_obj: The raw Discord message object to cache.
+        :param ingest: Whether to ingest the message into the RAG database.
         """
         if channel_id not in self._caches:
             raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
@@ -90,11 +79,45 @@ class GLCache:
         if evicted is not None:
             self._memo.pop(evicted, None)
 
-        # Memoize if needed
+        # Enumerate resource availability to cleanly route message ingestion
         msg_id = message_obj.id
-        needs_memo = msg_id not in self._memo
-        if needs_memo:
+        resources = {
+            "memo": msg_id in self._memo,
+            "sqlite": False,
+            "vector": False,
+        }
+
+        if ingest:
+            try:
+                resources["sqlite"] = await rag.message_exists(msg_id)
+                # Vector index hydration is coupled with SQLite writes so we mirror its availability here.
+                resources["vector"] = resources["sqlite"]
+            except Exception:
+                resources["sqlite"] = resources["vector"] = False
+
+        # Memoize if missing
+        if not resources["memo"]:
             self._memo[msg_id] = await format_message(message_obj)
+
+        # Ingest into RAG if backing stores are missing
+        if ingest and not resources["sqlite"]:
+            try:
+                await rag.ingest_cache_message(
+                    server_id=message_obj.guild.id if message_obj.guild else 0,
+                    channel_id=channel_id,
+                    message_id=msg_id,
+                    author_id=message_obj.author.id,
+                    ts=message_obj.created_at.timestamp(),
+                    cache_message=self._memo[msg_id],
+                )
+            except Exception:
+                logger.exception("RAG ingestion failed for message %s", msg_id)
+
+        # Persist memo if new or eviction occurred
+        if not resources["memo"] or evicted is not None:
+            memo_dict = {m.id: self._memo[m.id] for m in cache}
+            memo_dict = memo.prune(channel_id, memo_dict)
+            memo.save(channel_id, memo_dict)
 
         # Log message preview (only build if enabled)
         if logger.isEnabledFor(logging.INFO):
@@ -105,7 +128,7 @@ class GLCache:
                 "Cached msg %s in channel %s (%s) by %s | Frags: %s",
                 msg_id,
                 channel_id,
-                "new" if needs_memo else "reuse",
+                "new" if not resources["memo"] else "reuse",
                 self._memo[msg_id]["author"],
                 preview,
             )
@@ -196,23 +219,31 @@ class GLCache:
             return
 
         # Initialize empty data structures
-        self._caches = {cid: deque(maxlen=Config.CACHE_LENGTH) for cid in channel_ids}
+        self._caches = {cid: deque(maxlen=cache.CACHE_LENGTH) for cid in channel_ids}
         self._memo = {}  # Clear to be safe -- this is a fresh start either way
 
-        # Populate caches with recent messages (UP TO Config.CACHE_LENGTH)
+        # Populate caches with recent messages (UP TO cache.CACHE_LENGTH)
         for cid in channel_ids:
+            # First seed memo table from on-disk store before fetching
+            loaded = memo.load(cid) if memo.exists(cid) else {}
+            self._memo.update(loaded)
+
+            # Fetch the diff
             channel = client.get_channel(cid)
             if not isinstance(channel, TextChannel):
-                logger.warning(
-                    f"Channel {cid} is not a text channel or not found. Skipping."
-                )
+                logger.warning(f"Channel {cid} is not a text channel or not found. Skipping.")
                 continue
 
             logger.info(f"Fetching history for channel {cid}...")
-            async for msg in channel.history(
-                limit=Config.CACHE_LENGTH, oldest_first=True
-            ):
+            async for msg in channel.history(limit=cache.CACHE_LENGTH, oldest_first=True):
                 await self.add_message(cid, msg)
+
+            # Prune memo to match deque and persist
+            memo_dict = {m.id: self._memo[m.id] for m in self._caches[cid]}
+            for mid in set(loaded) - set(memo_dict):
+                self._memo.pop(mid, None)
+            memo_dict = memo.prune(cid, memo_dict)
+            memo.save(cid, memo_dict)
 
         logger.info(f"Initialized caches for {len(channel_ids)} channels")
 

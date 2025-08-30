@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from gregg_limper.memory.rag import embeddings
-from gregg_limper.config import Config
+from gregg_limper.config import rag
 from gregg_limper.memory.rag.vector import vector_index
 
 
@@ -54,7 +54,7 @@ class FakeCollection:
 
 
 async def fake_embed_text(text: str, model: str | None = None) -> np.ndarray:
-    base = np.arange(Config.EMB_DIM, dtype=np.float32)
+    base = np.arange(rag.EMB_DIM, dtype=np.float32)
     return base + len(text)
 
 

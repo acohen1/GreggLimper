@@ -1,10 +1,11 @@
-/glvenv
-gregg_limper/.env
+.pytest_cache/
 .venv/
 .env
 __pycache__/
 test.py
 .vscode/
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
-.pytest_cache/
+gregg_limper/memory/cache/data/

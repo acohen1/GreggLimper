@@ -1,6 +1,6 @@
 """Helpers for interacting with Discord's API"""
 import discord
-from gregg_limper.config import Config
+from gregg_limper.config import core
 from gregg_limper.event_hooks import message_hook, reaction_hook, ready_hook
 from gregg_limper.memory.rag import scheduler
 
@@ -43,12 +43,12 @@ def run():
     """
     Start the Discord client with configured token.
     """
-    if not Config.DISCORD_API_TOKEN:
+    if not core.DISCORD_API_TOKEN:
         logger.error("No DISCORD_TOKEN configured. Cannot run client.")
         return
 
     try:
-        client.run(Config.DISCORD_API_TOKEN)
+        client.run(core.DISCORD_API_TOKEN)
     except discord.LoginFailure as e:
         logger.error(f"Login failed: {e}")
     except Exception as e:

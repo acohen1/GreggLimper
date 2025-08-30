@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import hashlib
 from gregg_limper.clients.oai import embed_text
-from gregg_limper.config import Config
+from gregg_limper.config import rag
 import logging
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ async def embed(text: str) -> np.ndarray:
         return await embed_text(text)
     except Exception as e:
         logger.error(f"Error embedding text: {e}. Defaulting to zeros vector.")
-        return np.zeros((Config.EMB_DIM,), dtype=np.float32)
+        return np.zeros((rag.EMB_DIM,), dtype=np.float32)
 
 def to_bytes(vec: np.ndarray) -> bytes:
     return vec.astype(np.float32).tobytes()

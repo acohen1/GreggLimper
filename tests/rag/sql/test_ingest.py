@@ -4,7 +4,7 @@ import numpy as np
 
 from gregg_limper.memory.rag import ingest
 from gregg_limper.formatter.model import TextFragment, ImageFragment, GIFFragment, LinkFragment, YouTubeFragment
-from gregg_limper.config import Config
+from gregg_limper.config import rag
 
 
 class DummyRepo:
@@ -17,7 +17,7 @@ class DummyRepo:
 
 
 async def fake_embed(text: str) -> np.ndarray:
-    return np.arange(Config.EMB_DIM, dtype=np.float32)
+    return np.arange(rag.EMB_DIM, dtype=np.float32)
 
 
 async def fake_upsert(rid, server_id, channel_id, vec):
@@ -61,9 +61,9 @@ def test_project_and_upsert(monkeypatch):
     assert row[0] == 1 and row[1] == 2 and row[2] == 3
     assert row[5] == "hello" and row[6] == "text"
     # embedding stored as bytes of correct length
-    assert isinstance(row[10], (bytes, bytearray)) and len(row[10]) == Config.EMB_DIM * 4
+    assert isinstance(row[10], (bytes, bytearray)) and len(row[10]) == rag.EMB_DIM * 4
     assert row[-1] > 0
     assert fake_upsert.called
     rid, server, channel, vec = fake_upsert.args
     assert rid == 1 and server == 1 and channel == 2
-    assert np.array_equal(vec, np.arange(Config.EMB_DIM, dtype=np.float32))
+    assert np.array_equal(vec, np.arange(rag.EMB_DIM, dtype=np.float32))

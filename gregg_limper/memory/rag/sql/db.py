@@ -2,20 +2,21 @@
 SQLite bootstrap and connection helpers
 =======================================
 
-- Path resolution pinned to this package directory.
+ - Database location configured via ``rag.SQL_DB_DIR``.
 - WAL + pragmatic PRAGMAs for decent concurrent read perf.
 """
 
 from __future__ import annotations
-from gregg_limper.config import Config
-import pathlib
+from gregg_limper.config import rag
+from pathlib import Path
 import sqlite3
 from typing import Optional
 
 
 def db_path() -> str:
-    here = pathlib.Path(__file__).parent
-    return str(here / Config.DB_NAME)
+    p = Path(rag.SQL_DB_DIR)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return str(p)
 
 
 def connect(path: Optional[str] = None) -> sqlite3.Connection:
@@ -48,7 +49,7 @@ def migrate(conn: sqlite3.Connection) -> None:
     Execute schema.sql (idempotent). Ensure your schema.sql uses IF NOT EXISTS
     for tables, indexes, and virtual tables.
     """
-    schema_file = pathlib.Path(__file__).with_name("schema.sql")
+    schema_file = Path(__file__).with_name("schema.sql")
     sql = schema_file.read_text(encoding="utf-8")
     with conn:  # single transaction for the whole migration
         conn.executescript(sql)

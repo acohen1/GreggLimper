@@ -18,7 +18,7 @@ from typing import List, Tuple
 from urllib.parse import urlparse, parse_qs
 from . import register
 import aiohttp
-from ...config import Config
+from ...config import core
 from ...clients.oai import describe_image_bytes
 from ..model import YouTubeFragment
 
@@ -52,7 +52,7 @@ class YouTubeHandler:
             "part": "snippet",
             "id": video_id,
             "maxResults": 1,
-            "key": Config.GCLOUD_API_KEY,
+             "key": core.GCLOUD_API_KEY,
         }
         api_url = "https://www.googleapis.com/youtube/v3/videos"
 
@@ -104,10 +104,10 @@ class YouTubeHandler:
 
                     # 1) Fetch video metadata
                     title, desc, thumbnail_url = await YouTubeHandler._fetch_video_metadata(
-                        session, video_id, Config.YT_THUMBNAIL_SIZE
+                      session, video_id, core.YT_THUMBNAIL_SIZE
                     )
                     clean_desc = " ".join(desc.split())
-                    max_len = Config.YT_DESC_MAX_LEN
+                    max_len = core.YT_DESC_MAX_LEN
                     desc = clean_desc[:max_len] + ("..." if len(clean_desc) > max_len else "")
 
                     # 2) Thumbnail -> vision model -> text description

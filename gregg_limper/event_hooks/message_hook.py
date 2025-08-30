@@ -1,7 +1,7 @@
 import discord
 from gregg_limper.memory.cache import GLCache
 from gregg_limper import commands
-from gregg_limper.config import Config
+from gregg_limper.config import core
 
 
 import logging
@@ -19,7 +19,7 @@ async def handle(client: discord.Client, message: discord.Message):
     - message: The incoming message object
     """
     # 1) Is message in allowed channel?
-    if message.channel.id not in Config.CHANNEL_IDS:
+    if message.channel.id not in core.CHANNEL_IDS:
         return
 
     logger.info(
