@@ -16,6 +16,7 @@ from .sql import db as _db
 from .sql.repositories import FragmentsRepo as _FragmentsRepo, MetaRepo as _MetaRepo
 from .vector.search import vector_search as _vector_search
 from .sql.admin import retention_prune as _retention_prune, vacuum as _vacuum
+from .vector import vector_index as _vector_index
 
 # Limit the public surface (keeps star-imports clean)
 __all__ = [
@@ -31,6 +32,7 @@ __all__ = [
     "set_channel_summary",
     "retention_prune",
     "vacuum",
+    "purge_user",
 ]
 
 # --- Internals -------------------------------------------------------------
@@ -172,6 +174,39 @@ async def set_channel_summary(channel_id: int, summary: str) -> None:
     """
     await _meta_repo.set_channel_summary(channel_id, summary)
 
+
+# --- Purge -------------------------------------------------------------------
+
+async def purge_user(author_id: int) -> int:
+    """Delete all fragments for ``author_id`` from SQL and vector index.
+
+    Returns number of fragments removed from the SQL store.
+    """
+
+    def _run():
+        with _conn:
+            rows = _conn.execute(
+                "SELECT id FROM fragments WHERE author_id=?", (author_id,)
+            ).fetchall()
+            ids = [int(r[0]) for r in rows]
+            _conn.execute(
+                "DELETE FROM fragments_fts WHERE rowid IN (SELECT id FROM fragments WHERE author_id=?)",
+                (author_id,),
+            )
+            cur = _conn.execute(
+                "DELETE FROM fragments WHERE author_id=?", (author_id,)
+            )
+        return ids, cur.rowcount
+
+    async with _db_lock:
+        ids, count = await asyncio.to_thread(_run)
+
+    try:
+        await _vector_index.delete_many(ids)
+    except Exception:
+        pass
+
+    return count
 
 # --- Maintenance ------------------------------------------------------------
 

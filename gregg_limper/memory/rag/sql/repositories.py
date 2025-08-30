@@ -203,3 +203,39 @@ class MetaRepo:
 
         async with self._lock:
             return await asyncio.to_thread(_query)
+
+
+class ConsentRepo:
+    def __init__(self, conn: sqlite3.Connection, lock: asyncio.Lock):
+        self.conn = conn
+        self._lock = lock
+
+    async def is_opted_in(self, user_id: int) -> bool:
+        sql = "SELECT 1 FROM rag_consent WHERE user_id=? LIMIT 1"
+
+        def _query() -> bool:
+            return self.conn.execute(sql, (user_id,)).fetchone() is not None
+
+        async with self._lock:
+            return await asyncio.to_thread(_query)
+
+    async def add_user(self, user_id: int) -> bool:
+        sql = "INSERT OR IGNORE INTO rag_consent(user_id, ts) VALUES(?, ?)"
+
+        def _run() -> bool:
+            with self.conn:
+                cur = self.conn.execute(sql, (user_id, time.time()))
+            return cur.rowcount > 0
+
+        async with self._lock:
+            return await asyncio.to_thread(_run)
+
+    async def remove_user(self, user_id: int) -> None:
+        sql = "DELETE FROM rag_consent WHERE user_id=?"
+
+        def _run() -> None:
+            with self.conn:
+                self.conn.execute(sql, (user_id,))
+
+        async with self._lock:
+            await asyncio.to_thread(_run)

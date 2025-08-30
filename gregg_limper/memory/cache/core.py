@@ -25,6 +25,7 @@ from discord import (
 from gregg_limper.config import cache
 from gregg_limper.formatter import format_message
 from .. import rag
+from ..rag import consent
 from . import memo
 from .utils import _frags_preview
 
@@ -89,17 +90,21 @@ class GLCache:
 
         if ingest:
             try:
-                # NOTE: We call message_exists() as a safeguard to prevent duplicate ingestion. When rehydrating
-                # the cache without a local memo, Discord messages may be re-processed through the LLM pipeline,
-                # which can yield slightly different fragments. Tracking this helps us avoid inconsistent duplicates
-                # and maintain cleaner storage across both SQLite and the vector index. If the I/O overhead of this
-                # check proves too high, it can be reconsidered, since downstream upserts are already designed to
-                # deduplicate. Removing message_exists should only be an issue if the local memo is lost or deleted.
-                resources["sqlite"] = await rag.message_exists(msg_id)
-                # Vector index hydration is coupled with SQLite writes so we mirror its availability here.
-                resources["vector"] = resources["sqlite"]
+                if not await consent.is_opted_in(message_obj.author.id):
+                    ingest = False
+                else:
+                    # NOTE: We call message_exists() as a safeguard to prevent duplicate ingestion. When rehydrating
+                    # the cache without a local memo, Discord messages may be re-processed through the LLM pipeline,
+                    # which can yield slightly different fragments. Tracking this helps us avoid inconsistent duplicates
+                    # and maintain cleaner storage across both SQLite and the vector index. If the I/O overhead of this
+                    # check proves too high, it can be reconsidered, since downstream upserts are already designed to
+                    # deduplicate. Removing message_exists should only be an issue if the local memo is lost or deleted.
+                    resources["sqlite"] = await rag.message_exists(msg_id)
+                    # Vector index hydration is coupled with SQLite writes so we mirror its availability here.
+                    resources["vector"] = resources["sqlite"]
             except Exception:
                 resources["sqlite"] = resources["vector"] = False
+                ingest = False
 
         # Memoize if missing
         if not resources["memo"]:
