@@ -39,9 +39,7 @@ logger = logging.getLogger(__name__)
 Mode = Literal["llm", "full"]
 
 class GLCache:
-    """
-    Singleton, channel-aware cache with memoized message formatting.
-    """
+    """Singleton, channel-aware cache with memoized message formatting."""
 
     _instance = None
 
@@ -57,8 +55,7 @@ class GLCache:
     # ------------------------------------------------------------------ #
 
     async def add_message(self, channel_id: int, message_obj: Message, ingest: bool = True) -> None:
-        """
-        Append *raw* Discord message to that channel's deque and memoize its
+        """Append *raw* Discord message to that channel's deque and memoize its
         formatted representation. Raises KeyError if channel_id is unknown.
 
         :param channel_id: The ID of the channel the message belongs to.
