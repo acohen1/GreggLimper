@@ -190,7 +190,7 @@ async def purge_user(author_id: int) -> int:
             ).fetchall()
             ids = [int(r[0]) for r in rows]
             _conn.execute(
-                "DELETE FROM fragments_fts WHERE rowid IN (SELECT id FROM fragments WHERE author_id=?)",
+                "DELETE FROM fragments WHERE rowid IN (SELECT id FROM fragments WHERE author_id=?)",
                 (author_id,),
             )
             cur = _conn.execute(
