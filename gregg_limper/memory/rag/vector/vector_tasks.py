@@ -1,4 +1,5 @@
-"""Vector index maintenance tasks.
+"""
+Vector index maintenance tasks.
 
 The Milvus vector index can drift out of sync with the fragments table if
 inserts fail or if the index accumulates many deleted rows.  This module

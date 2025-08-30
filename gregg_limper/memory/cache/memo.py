@@ -1,4 +1,5 @@
-"""Persistent memo store for cached message fragments.
+"""
+Persistent memo store for cached message fragments.
 
 Each Discord channel gets a gzipped JSON file:
     {msg_id: {"author": str, "fragments": [Fragment-as-dict, ...]}, ...}

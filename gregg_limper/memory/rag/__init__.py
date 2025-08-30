@@ -11,11 +11,15 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 import json
 import asyncio
+import time
+
+from gregg_limper.config import core as core_cfg
 
 from .sql import db as _db
 from .sql.repositories import FragmentsRepo as _FragmentsRepo, MetaRepo as _MetaRepo
 from .vector.search import vector_search as _vector_search
 from .sql.admin import retention_prune as _retention_prune, vacuum as _vacuum
+from .vector import vector_index as _vector_index
 
 # Limit the public surface (keeps star-imports clean)
 __all__ = [
@@ -31,6 +35,7 @@ __all__ = [
     "set_channel_summary",
     "retention_prune",
     "vacuum",
+    "purge_user",
 ]
 
 # --- Internals -------------------------------------------------------------
@@ -38,6 +43,11 @@ __all__ = [
 # Singleton connection + repositories
 _conn = _db.connect()
 _db.migrate(_conn)
+with _conn:
+    _conn.execute(
+        "INSERT OR IGNORE INTO rag_consent(user_id, ts) VALUES(?, ?)",
+        (core_cfg.BOT_USER_ID, time.time()),
+    )
 _db_lock = asyncio.Lock()
 
 _frag_repo = _FragmentsRepo(_conn, _db_lock)
@@ -89,7 +99,15 @@ async def vector_search(
     query: str,
     k: int = 50,
 ) -> List[Dict[str, Any]]:
-    """Similarity search over stored fragments."""
+    """Similarity search over stored fragments.
+
+    :param server_id: Discord server (guild) id to scope the search.
+    :param channel_id: Channel id to scope the search.
+    :param query: Natural language query to embed and search with.
+    :param k: Maximum number of nearest fragments to return.
+    :returns: Ordered list of fragment dictionaries containing metadata such as
+        ``id``, ``message_id``, ``author_id`` and ``content``.
+    """
     return await _vector_search(
         repo=_frag_repo,
         server_id=server_id,
@@ -100,7 +118,8 @@ async def vector_search(
 
 
 async def fetch_vectors_for_index(*, conn=None, lock=None):
-    """Fetch all stored fragment vectors.
+    """
+    Fetch all stored fragment vectors.
 
     Optional ``conn`` and ``lock`` parameters allow callers to supply their own
     database connection and lock, primarily for testing.
@@ -172,6 +191,40 @@ async def set_channel_summary(channel_id: int, summary: str) -> None:
     """
     await _meta_repo.set_channel_summary(channel_id, summary)
 
+
+# --- Purge -------------------------------------------------------------------
+
+async def purge_user(author_id: int) -> int:
+    """
+    Delete all fragments for ``author_id`` from SQL and vector index.
+
+    Returns number of fragments removed from the SQL store.
+    """
+
+    def _run():
+        with _conn:
+            rows = _conn.execute(
+                "SELECT id FROM fragments WHERE author_id=?", (author_id,)
+            ).fetchall()
+            ids = [int(r[0]) for r in rows]
+            _conn.execute(
+                "DELETE FROM fragments WHERE rowid IN (SELECT id FROM fragments WHERE author_id=?)",
+                (author_id,),
+            )
+            cur = _conn.execute(
+                "DELETE FROM fragments WHERE author_id=?", (author_id,)
+            )
+        return ids, cur.rowcount
+
+    async with _db_lock:
+        ids, count = await asyncio.to_thread(_run)
+
+    try:
+        await _vector_index.delete_many(ids)
+    except Exception:
+        pass
+
+    return count
 
 # --- Maintenance ------------------------------------------------------------
 

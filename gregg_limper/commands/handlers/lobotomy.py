@@ -8,5 +8,7 @@ class LobotomyCommand:
     command_str = "lobotomy"
 
     @staticmethod
-    async def handle(client: discord.Client, message: discord.Message, args: str) -> None:
+    async def handle(
+        client: discord.Client, message: discord.Message, args: str
+    ) -> None:
         await message.channel.send("Initiating lobotomy sequence...")

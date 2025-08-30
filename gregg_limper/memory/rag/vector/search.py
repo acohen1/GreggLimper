@@ -16,7 +16,19 @@ async def vector_search(
     query: str,
     k: int = 50,
 ) -> List[Dict[str, Any]]:
-    """Embed the query and search the Milvus vector index."""
+    """
+    Embed the query and search the Milvus vector index.
+
+    :param repo: Fragment repository used to resolve result ids.
+    :param server_id: Discord server (guild) id to scope the search.
+    :param channel_id: Channel id to scope the search.
+    :param query: Natural language query to embed and search with.
+    :param k: Maximum number of nearest fragments to return.
+    :returns: Ordered list of fragment dictionaries. Each dictionary contains
+        fragment metadata such as ``id``, ``message_id``, ``author_id`` and
+        ``content``. An empty list is returned on failure or when no results are
+        found.
+    """
 
     qvec = await embed(query)
 

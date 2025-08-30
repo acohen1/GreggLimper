@@ -19,11 +19,13 @@ _vec_task: asyncio.Task | None = None
 
 
 async def start(interval: float = 3600, *, conn=None, lock=None) -> Tuple[asyncio.Task, asyncio.Task]:
-    """Run maintenance once and schedule periodic cycles.
+    """
+    Run maintenance once and schedule periodic cycles.
 
-    Optional ``conn`` and ``lock`` parameters allow tests to supply their own
-    database connection; otherwise the package-level defaults are used.
-    Returns a tuple of ``(sql_task, vector_task)`` handles.
+    :param interval: Seconds between maintenance passes.
+    :param conn: Optional SQLite connection for testing.
+    :param lock: Optional lock guarding ``conn``.
+    :returns: ``(sql_task, vector_task)`` handles.
     """
     global _sql_task, _vec_task
 

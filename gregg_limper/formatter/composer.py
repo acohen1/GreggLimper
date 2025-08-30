@@ -17,12 +17,11 @@ ORDER = ["text", "image", "gif", "link", "youtube"]
 
 async def compose(message: Message, classified: Dict[str, Any]) -> List[Fragment]:
     """
-    Aggregate media-slice outputs into ``Fragment`` objects.
+    Aggregate media-slice outputs into :class:`Fragment` objects.
 
-    1. Launch every handler (text, image, gif, link, youtube) whose slice exists.
-    2. Await them concurrently.
-    3. Flatten results into a single list of fragments.
-    4. Assign stable ``id`` values using existing logic.
+    :param message: Source Discord message.
+    :param classified: Media slices produced by :func:`classifier.classify`.
+    :returns: List of fragments with stable ``id`` values.
     """
 
     coros: List[asyncio.Future] = [
@@ -31,6 +30,7 @@ async def compose(message: Message, classified: Dict[str, Any]) -> List[Fragment
         if classified.get(mt) and get_handler(mt)
     ]
 
+    # Execute slice handlers concurrently; absent types yield an empty list
     results = await asyncio.gather(*coros) if coros else []
     fragments: List[Fragment] = [rec for frag_list in results for rec in frag_list]
 
@@ -47,7 +47,12 @@ async def compose(message: Message, classified: Dict[str, Any]) -> List[Fragment
 
 
 def serialize_fragments(fragments: List[Fragment]) -> List[dict]:
-    """Convert ``Fragment`` objects into JSON-serializable dictionaries."""
+    """
+    Convert ``Fragment`` objects into JSON-serializable dictionaries.
+
+    :param fragments: List of fragment objects.
+    :returns: Corresponding list of ``dict`` objects.
+    """
     return [f.to_dict() for f in fragments]
 
 

@@ -30,6 +30,12 @@ CREATE INDEX IF NOT EXISTS idx_frag_msg ON fragments(message_id);
 CREATE INDEX IF NOT EXISTS idx_frag_media ON fragments(media_id);
 
 -- Simple metadata tables (JSON blobs)
+-- Consent allowlist
+CREATE TABLE IF NOT EXISTS rag_consent (
+  user_id INTEGER PRIMARY KEY,
+  ts      REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS user_profiles (
   user_id   INTEGER PRIMARY KEY,
   blob      TEXT NOT NULL
