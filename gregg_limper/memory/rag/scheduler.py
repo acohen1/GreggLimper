@@ -6,7 +6,7 @@ import asyncio
 from typing import Tuple
 
 from gregg_limper.maintenance import startup as _startup, shutdown as _shutdown
-from gregg_limper.config import rag
+from gregg_limper.config import rag, milvus
 from .sql import sql_tasks
 from .vector import vector_tasks
 from . import _conn as _default_conn, _db_lock as _default_lock
@@ -36,20 +36,30 @@ async def start(interval: float = 3600, *, conn=None, lock=None) -> Tuple[asynci
     logger.info("Starting SQL maintenance (interval=%ds)", rag.MAINTENANCE_INTERVAL)
     await sql_tasks.run(conn, lock)
 
-    logger.info("Starting vector maintenance (interval=%ds)", rag.MAINTENANCE_INTERVAL)
-    await vector_tasks.run(conn, lock)
+    if milvus.ENABLE_MILVUS:
+        logger.info("Starting vector maintenance (interval=%ds)", rag.MAINTENANCE_INTERVAL)
+        await vector_tasks.run(conn, lock)
+    else:
+        logger.info("ENABLE_MILVUS is false; skipping vector maintenance")
 
     if not _sql_task or _sql_task.done():
         async def _sql_loop():
             logger.info("Starting SQL maintenance (interval=%ds)", rag.MAINTENANCE_INTERVAL)
             await sql_tasks.run(conn, lock)
+
         _sql_task = await _startup(_sql_loop, interval)
 
-    if not _vec_task or _vec_task.done():
-        async def _vec_loop():
-            logger.info("Starting vector maintenance (interval=%ds)", rag.MAINTENANCE_INTERVAL)
-            await vector_tasks.run(conn, lock)
-        _vec_task = await _startup(_vec_loop, interval)
+    if milvus.ENABLE_MILVUS:
+        if not _vec_task or _vec_task.done():
+            async def _vec_loop():
+                logger.info(
+                    "Starting vector maintenance (interval=%ds)", rag.MAINTENANCE_INTERVAL
+                )
+                await vector_tasks.run(conn, lock)
+
+            _vec_task = await _startup(_vec_loop, interval)
+    else:
+        _vec_task = None
 
     return _sql_task, _vec_task
 

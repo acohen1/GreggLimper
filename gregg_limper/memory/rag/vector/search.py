@@ -2,6 +2,7 @@ import logging
 from typing import Optional, List, Dict, Any
 from ..embeddings import embed
 from . import vector_index
+from gregg_limper.config import milvus
 
 import numpy as np
 
@@ -30,11 +31,19 @@ async def vector_search(
         found.
     """
 
+    if not milvus.ENABLE_MILVUS:
+        logger.info("ENABLE_MILVUS is false; returning empty vector search results")
+        return []
+
     qvec = await embed(query)
 
     # If the embedding failed (returned a zero vector), log and return empty results
     if not np.any(qvec):
-        logger.info("Empty/degenerate query embedding (server_id=%d channel_id=%d)", server_id, channel_id)
+        logger.info(
+            "Empty/degenerate query embedding (server_id=%d channel_id=%d)",
+            server_id,
+            channel_id,
+        )
         return []
 
     try:

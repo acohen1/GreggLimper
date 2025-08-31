@@ -12,15 +12,16 @@ async def handle(client: discord.Client):
     """Cache initialization on client ready event."""
     logger.info(f"Logged in as {client.user.name} (ID: {client.user.id})")
 
-    # Validate Milvus GPU connection for RAG vector indexing
-    try:
-        validate_connection()
-        logger.info("Milvus GPU validation succeeded")
-    except Exception as e:
-        if not milvus.MILVUS_OPTIONAL:
+    if milvus.ENABLE_MILVUS:
+        # Validate Milvus GPU connection for RAG vector indexing
+        try:
+            validate_connection()
+            logger.info("Milvus GPU validation succeeded")
+        except Exception as e:
             logger.error("Milvus validation failed: %s", e)
-        else:
             raise
+    else:
+        logger.info("ENABLE_MILVUS is false; skipping Milvus validation")
     
     # Initialize GLCache (hydrate with discord data)
     logger.info(f"Initializing GLCache with configured channel IDs: {core.CHANNEL_IDS}")

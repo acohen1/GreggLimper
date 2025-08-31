@@ -16,6 +16,9 @@ from pymilvus import (
 )
 
 from gregg_limper.config import milvus, rag
+import logging
+
+logger = logging.getLogger(__name__)
 
 _collection: Collection | None = None
 _collection_loaded = False
@@ -48,6 +51,9 @@ def _get_collection() -> Collection:
     """Return the singleton Milvus collection instance, connecting if needed."""
 
     global _collection, _collection_loaded
+
+    if not milvus.ENABLE_MILVUS:
+        raise RuntimeError("ENABLE_MILVUS is false; vector index is disabled")
 
     if _collection is not None and _collection_loaded:
         return _collection
@@ -105,6 +111,10 @@ async def upsert(rid: int, server_id: int, channel_id: int, embedding) -> None:
     :returns: ``None``.
     """
 
+    if not milvus.ENABLE_MILVUS:
+        logger.info("ENABLE_MILVUS is false; skipping upsert")
+        return
+
     vec = _normalize(embedding)
 
     def _run() -> None:
@@ -121,6 +131,10 @@ async def upsert_many(items: list[tuple[int, int, int, Any]]) -> None:
     :param items: Iterable of ``(rid, server_id, channel_id, embedding)`` tuples.
     :returns: ``None``.
     """
+
+    if not milvus.ENABLE_MILVUS:
+        logger.info("ENABLE_MILVUS is false; skipping batch upsert")
+        return
 
     if not items:
         return
@@ -155,6 +169,10 @@ async def delete_many(ids: list[int]) -> None:
     :returns: ``None``.
     """
 
+    if not milvus.ENABLE_MILVUS:
+        logger.info("ENABLE_MILVUS is false; skipping delete_many")
+        return
+
     if not ids:
         return
 
@@ -173,6 +191,10 @@ async def existing_ids() -> Set[int]:
 
     :returns: Set of row ids stored in the vector index.
     """
+
+    if not milvus.ENABLE_MILVUS:
+        logger.info("ENABLE_MILVUS is false; returning empty existing_ids")
+        return set()
 
     def _run() -> Set[int]:
         col = _get_collection()
@@ -206,6 +228,10 @@ async def flush() -> None:
     :returns: ``None``.
     """
 
+    if not milvus.ENABLE_MILVUS:
+        logger.info("ENABLE_MILVUS is false; skipping flush")
+        return
+
     def _run() -> None:
         col = _get_collection()
         col.flush()
@@ -224,6 +250,10 @@ async def search(
     :param k: Number of nearest neighbors to return.
     :returns: List of ``(rid, score)`` pairs ordered by similarity.
     """
+
+    if not milvus.ENABLE_MILVUS:
+        logger.info("ENABLE_MILVUS is false; returning empty search results")
+        return []
 
     vec = _normalize(query_vec)
 
