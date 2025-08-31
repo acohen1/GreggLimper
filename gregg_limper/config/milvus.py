@@ -10,4 +10,4 @@ class Milvus:
     MILVUS_NLIST: int = int(os.getenv("MILVUS_NLIST", "1024"))
     MILVUS_NPROBE: int = int(os.getenv("MILVUS_NPROBE", "32"))
     MILVUS_DELETE_CHUNK: int = int(os.getenv("MILVUS_DELETE_CHUNK", "800"))
-    MILVUS_OPTIONAL: bool = os.getenv("MILVUS_OPTIONAL", "0").lower() in ("1", "true", "yes")
+    ENABLE_MILVUS: bool = os.getenv("ENABLE_MILVUS", "1").lower() in ("1", "true", "yes")

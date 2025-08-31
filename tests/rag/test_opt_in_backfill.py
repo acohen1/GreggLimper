@@ -51,7 +51,7 @@ def test_backfill(monkeypatch):
     other = SimpleNamespace(id=2, display_name="o")
     monkeypatch.setattr(core_cfg, "CHANNEL_IDS", [1, 2])
 
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
 
     guild = SimpleNamespace(id=10, text_channels=[])
 

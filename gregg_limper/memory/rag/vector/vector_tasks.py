@@ -14,6 +14,7 @@ import logging
 from ..embeddings import from_bytes
 from .. import fetch_vectors_for_index
 from . import vector_index
+from gregg_limper.config import milvus
 
 logger = logging.getLogger(__name__)
 
@@ -58,5 +59,8 @@ async def _compact() -> None:
 
 async def run(conn, lock) -> None:
     """Perform one maintenance cycle for the vector index."""
+    if not milvus.ENABLE_MILVUS:
+        logger.info("ENABLE_MILVUS is false; skipping vector maintenance run")
+        return
     await _sync_index(conn, lock)
     await _compact()

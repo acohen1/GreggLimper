@@ -7,7 +7,7 @@ and upserts via the repositories.
 """
 from __future__ import annotations
 from typing import Any, Dict
-from gregg_limper.config import rag
+from gregg_limper.config import rag, milvus
 from .embeddings import embed, to_bytes, blake16
 from .media_id import stable_media_id
 from .vector import vector_index
@@ -109,21 +109,24 @@ async def project_and_upsert(
             embed_ts,
         ))
 
-        # Insert into vector index
+        # Insert into vector index if enabled
         rid = await repo.lookup_fragment_id(message_id, p["i"], p["typ"], p["content_h"])
         if rid is not None:
             logger.info("Upserted fragment into database (type=%s)", p["typ"])
-            try:
-                await vector_index.upsert(rid, server_id, channel_id, vec)  # Milvus write
-                logger.info("Upserted fragment into vector index (type=%s)", p["typ"])
-            except Exception as e:
-                logger.error(
-                    "Vector index upsert failed (message_id=%s idx=%s type=%s err=%s)",
-                    message_id,
-                    p["i"],
-                    p["typ"],
-                    e,
-                )
+            if milvus.ENABLE_MILVUS:
+                try:
+                    await vector_index.upsert(rid, server_id, channel_id, vec)  # Milvus write
+                    logger.info("Upserted fragment into vector index (type=%s)", p["typ"])
+                except Exception as e:
+                    logger.error(
+                        "Vector index upsert failed (message_id=%s idx=%s type=%s err=%s)",
+                        message_id,
+                        p["i"],
+                        p["typ"],
+                        e,
+                    )
+            else:
+                logger.info("ENABLE_MILVUS is false; skipping vector index upsert")
         else:
             logger.warning(
                 "Fragment id lookup failed after insert (message_id=%s idx=%s type=%s)",

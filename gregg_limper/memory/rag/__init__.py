@@ -13,7 +13,7 @@ import json
 import asyncio
 import time
 
-from gregg_limper.config import core as core_cfg
+from gregg_limper.config import core as core_cfg, milvus
 
 from .sql import db as _db
 from .sql.repositories import FragmentsRepo as _FragmentsRepo, MetaRepo as _MetaRepo
@@ -219,10 +219,11 @@ async def purge_user(author_id: int) -> int:
     async with _db_lock:
         ids, count = await asyncio.to_thread(_run)
 
-    try:
-        await _vector_index.delete_many(ids)
-    except Exception:
-        pass
+    if milvus.ENABLE_MILVUS:
+        try:
+            await _vector_index.delete_many(ids)
+        except Exception:
+            pass
 
     return count
 
