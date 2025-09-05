@@ -41,19 +41,14 @@ async def _backfill_user_messages(
         else []
     )
 
-    # Parallelize *formatting only* with a bounded semaphore
+    # Parallelize *formatting* with a bounded semaphore
     sem = asyncio.Semaphore(rag_cfg.BACKFILL_CONCURRENCY)
     tasks: list[asyncio.Task[tuple[discord.Message, int, dict | None]]] = []
 
-    async def _format_bounded(msg: discord.Message, channel_id: int) -> tuple[discord.Message, int, dict | None]:
-        """
-        Format one message while respecting concurrency limits.
-
-        :param msg: Discord message instance.
-        :param channel_id: Channel id containing the message.
-        :returns: ``(msg, channel_id, cache_msg_or_None)`` tuple; ``cache_msg``
-            is ``None`` on failure or skip.
-        """
+    async def _format_bounded(
+        msg: discord.Message, channel_id: int
+    ) -> tuple[discord.Message, int, dict | None]:
+        """Format one message while respecting concurrency limits."""
         async with sem:
             try:
                 cache_msg = await format_message(msg)
@@ -61,6 +56,31 @@ async def _backfill_user_messages(
                 logger.exception("Failed to format message %s during backfill", msg.id)
                 cache_msg = None
         return msg, channel_id, cache_msg
+
+    # Ingest semaphore and task list prepared after formatting completes
+    ingest_sem = asyncio.Semaphore(rag_cfg.BACKFILL_CONCURRENCY)
+
+    async def _ingest_bounded(
+        msg: discord.Message, channel_id: int, cache_msg: dict
+    ) -> bool:
+        """Ingest one message while respecting concurrency limits."""
+        async with ingest_sem:
+            try:
+                created_at = msg.created_at
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=datetime.timezone.utc)
+                await rag.ingest_cache_message(
+                    server_id=msg.guild.id if msg.guild else 0,
+                    channel_id=channel_id,
+                    message_id=msg.id,
+                    author_id=msg.author.id,
+                    ts=created_at.timestamp(),
+                    cache_message=cache_msg,
+                )
+                return True
+            except Exception:
+                logger.exception("Failed to ingest message %s during backfill", msg.id)
+                return False
 
     # Enumerate candidate messages (opted-in user only, within lookback)
     for channel in channels:
@@ -75,28 +95,21 @@ async def _backfill_user_messages(
         except Exception:
             logger.exception("Failed to iterate channel %s during backfill", channel.id)
 
-    # Consume formatter results as they complete; perform upserts sequentially.
+    # Consume formatter results, then ingest in parallel with bounded concurrency
+    formatted: list[tuple[discord.Message, int, dict]] = []
     if tasks:
         for coro in asyncio.as_completed(tasks):
             msg, channel_id, cache_msg = await coro
-            if cache_msg is None:
-                continue
-            try:
-                created_at = msg.created_at
-                # Normalize to UTC if naive to avoid platform-specific timestamp() errors
-                if created_at.tzinfo is None:
-                    created_at = created_at.replace(tzinfo=datetime.timezone.utc)
-                await rag.ingest_cache_message(
-                    server_id=msg.guild.id if msg.guild else 0,
-                    channel_id=channel_id,
-                    message_id=msg.id,
-                    author_id=msg.author.id,
-                    ts=created_at.timestamp(),
-                    cache_message=cache_msg,
-                )
-                processed += 1
-            except Exception:
-                logger.exception("Failed to ingest message %s during backfill", msg.id)
+            if cache_msg is not None:
+                formatted.append((msg, channel_id, cache_msg))
+
+    if formatted:
+        ingest_tasks = [
+            _ingest_bounded(msg, channel_id, cache_msg)
+            for msg, channel_id, cache_msg in formatted
+        ]
+        results = await asyncio.gather(*ingest_tasks)
+        processed += sum(1 for r in results if r)
 
     return processed
 

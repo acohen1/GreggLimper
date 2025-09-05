@@ -251,6 +251,12 @@ class GLCache:
         """
         Hydrate caches from Discord history.
 
+        Messages are added to the cache with ``ingest=False`` and a separate
+        ingestion step runs afterward. This keeps cache insertion ordered while
+        allowing RAG upserts to execute with bounded concurrency. Using
+        ``add_message(..., ingest=True)`` directly here would couple these two
+        operations and serialize initialization.
+
         :param client: Discord client for API calls.
         :param channel_ids: Channels to populate.
         :returns: ``None``.
@@ -296,6 +302,38 @@ class GLCache:
                         cache_msg = None
                 return idx, msg, cache_msg
 
+            # Ingest tasks collected after cache population (bounded later)
+            # We avoid calling ``add_message(..., ingest=True)`` so that cache
+            # insertion remains ordered while RAG upserts happen in parallel.
+            ingest_sem = asyncio.Semaphore(cache.INGEST_CONCURRENCY)
+            ingest_tasks: list[asyncio.Future] = []
+
+            async def _ingest_bounded(msg: Message, cache_msg: dict) -> None:
+                """Ingest one message while respecting concurrency limits."""
+                async with ingest_sem:
+                    try:
+                        # Skip if author is not opted in
+                        if not await consent.is_opted_in(msg.author.id):
+                            return
+                        # Skip if this message has already been ingested
+                        if await rag.message_exists(msg.id):
+                            return
+                        created_at = msg.created_at
+                        if created_at.tzinfo is None:
+                            created_at = created_at.replace(tzinfo=datetime.timezone.utc)
+                        await rag.ingest_cache_message(
+                            server_id=msg.guild.id if msg.guild else 0,
+                            channel_id=cid,
+                            message_id=msg.id,
+                            author_id=msg.author.id,
+                            ts=created_at.timestamp(),
+                            cache_message=cache_msg,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "RAG ingestion failed for message %s during init", msg.id
+                        )
+
             # Build a results list aligned to message order. Each result slot corresponds to a chronological index.
             # - If the message is already memoized, mark it as ready immediately.  
             # - Otherwise, schedule a format task to fill its slot later.
@@ -311,7 +349,15 @@ class GLCache:
             next_idx = 0
             while next_idx < len(results) and results[next_idx] is not None:
                 m, _ = results[next_idx]
-                await self.add_message(cid, m)
+                try:
+                    await self.add_message(cid, m, ingest=False)
+                except Exception:
+                    logger.exception(
+                        "Failed to add message %s during init", m.id
+                    )
+                else:
+                    if not await rag.message_exists(m.id):
+                        ingest_tasks.append(_ingest_bounded(m, self._memo[m.id]))
                 next_idx += 1
 
             # As formatting tasks finish (possibly out of order), fill their slots.
@@ -322,9 +368,23 @@ class GLCache:
                 while next_idx < len(results) and results[next_idx] is not None:
                     m, cm = results[next_idx]
                     if cm is None:
-                        await self.add_message(cid, m)
+                        try:
+                            await self.add_message(cid, m, ingest=False)
+                        except Exception:
+                            logger.exception(
+                                "Failed to add message %s during init", m.id
+                            )
+                        else:
+                            if not await rag.message_exists(m.id):
+                                ingest_tasks.append(
+                                    _ingest_bounded(m, self._memo[m.id])
+                                )
                     else:
-                        await self.add_message(cid, m, cache_msg=cm)
+                        await self.add_message(
+                            cid, m, ingest=False, cache_msg=cm
+                        )
+                        if not await rag.message_exists(m.id):
+                            ingest_tasks.append(_ingest_bounded(m, self._memo[m.id]))
                     next_idx += 1
 
             # Final flush: if anything remained unprocessed (e.g. the tail),
@@ -332,10 +392,26 @@ class GLCache:
             while next_idx < len(results):
                 m, cm = results[next_idx]
                 if cm is None:
-                    await self.add_message(cid, m)
+                    try:
+                        await self.add_message(cid, m, ingest=False)
+                    except Exception:
+                        logger.exception(
+                            "Failed to add message %s during init", m.id
+                        )
+                    else:
+                        if not await rag.message_exists(m.id):
+                            ingest_tasks.append(
+                                _ingest_bounded(m, self._memo[m.id])
+                            )
                 else:
-                    await self.add_message(cid, m, cache_msg=cm)
+                    await self.add_message(cid, m, ingest=False, cache_msg=cm)
+                    if not await rag.message_exists(m.id):
+                        ingest_tasks.append(_ingest_bounded(m, self._memo[m.id]))
                 next_idx += 1
+
+            # Perform all RAG ingests with bounded concurrency
+            if ingest_tasks:
+                await asyncio.gather(*ingest_tasks)
 
             # Reconcile on-disk memo with final deque contents
             memo_dict = {m.id: self._memo[m.id] for m in self._caches[cid]}
