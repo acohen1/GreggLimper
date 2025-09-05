@@ -95,21 +95,23 @@ async def _backfill_user_messages(
         except Exception:
             logger.exception("Failed to iterate channel %s during backfill", channel.id)
 
-    # Consume formatter results, then ingest in parallel with bounded concurrency
-    formatted: list[tuple[discord.Message, int, dict]] = []
+    # Consume formatter results, scheduling ingestion immediately
+    ingest_tasks: list[asyncio.Task[bool]] = []
     if tasks:
         for coro in asyncio.as_completed(tasks):
             msg, channel_id, cache_msg = await coro
             if cache_msg is not None:
-                formatted.append((msg, channel_id, cache_msg))
+                ingest_tasks.append(
+                    asyncio.create_task(
+                        _ingest_bounded(msg, channel_id, cache_msg)
+                    )
+                )
 
-    if formatted:
-        ingest_tasks = [
-            _ingest_bounded(msg, channel_id, cache_msg)
-            for msg, channel_id, cache_msg in formatted
-        ]
-        results = await asyncio.gather(*ingest_tasks)
-        processed += sum(1 for r in results if r)
+    # Process ingests as they complete to track progress accurately
+    if ingest_tasks:
+        for coro in asyncio.as_completed(ingest_tasks):
+            if await coro:
+                processed += 1
 
     return processed
 
