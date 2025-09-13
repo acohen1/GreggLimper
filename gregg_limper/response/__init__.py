@@ -16,9 +16,17 @@ from gregg_limper.clients import oai, ollama
 from .prompt import build_sys_prompt
 from .cache_adapter import build_history
 
-async def dispatch(message: discord.Message) -> str:
-    """Send to the selected provider."""
-    sys_prompt = await build_sys_prompt(message)
+
+async def handle(message: discord.Message, sys_prompt: str) -> str:
+    """
+    Generate a reply using a pre-built system prompt.
+
+    ``sys_prompt`` must be constructed *before* the incoming message is cached
+    to ensure that retrieval-augmented lookups do not surface the message being
+    responded to. Conversation history is fetched here *after* caching so that
+    the latest message is included in the request to the model.
+    """
+
     cache_msgs = await build_history(message.channel.id, core.CONTEXT_LENGTH)
     messages = [{"role": "system", "content": sys_prompt}, *cache_msgs]
 
@@ -26,3 +34,6 @@ async def dispatch(message: discord.Message) -> str:
         return await ollama.chat(messages, model=local_llm.LOCAL_MODEL_ID)
     else:
         return await oai.chat(messages, model=core.MSG_MODEL_ID)
+
+
+__all__ = ["build_sys_prompt", "handle"]

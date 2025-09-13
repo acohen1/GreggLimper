@@ -59,3 +59,6 @@ async def handle(client: discord.Client, message: discord.Message):
     # 5) Start response pipeline if bot is mentioned
     if not bot_mentioned:
         return
+
+    # response_text = await response.handle(message, sys_prompt)
+    # await message.channel.send(response_text)
