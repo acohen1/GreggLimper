@@ -3,15 +3,13 @@ from gregg_limper.memory.cache import GLCache
 from gregg_limper import commands
 from gregg_limper.config import core
 from gregg_limper import response
-
+import json
 
 import logging
 
 logger = logging.getLogger(__name__)
 
-# NOTE: temp import
-import json
-
+# TODO: SEE TODO IN response/prompt.py ABOUT BETTER HANDLING SEMANTIC SEARCH
 
 async def handle(client: discord.Client, message: discord.Message):
     """

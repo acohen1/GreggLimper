@@ -32,23 +32,46 @@ Cached conversation history is provided in JSON format. Each message has the for
 
 Do not respond in this format unless explicitly instructed. This schema is only for interpreting cached messages.
 """
-
 async def build_sys_prompt(message: Message) -> str:
     """
     Human-readable system prompt (Markdown-ish).
     """
     # RAG fetches (all async)
+
+    # Channel summary
     chan_summary = await get_channel_summary(message.channel.id)
 
+    # Profiles of users mentioned in the message (excluding the bot itself)
     user_mentions = [u.id for u in message.mentions if u.id != disc.client.user.id]
     profiles: List[Dict[str, Any]] = (
         await asyncio.gather(*(user_profile(u) for u in user_mentions))
         if user_mentions else []
     )
 
+    # Semantic memory (vector search)
+    # TODO: We should really be comparing each fragment in the incoming message to the ones in semantic memory (vector_search).
+    # At the moment, we simply take the message content as the vector search query, which is suboptimal if the message contains
+    # images, links, or other non-text fragments.
+    # We already have logic in the formatter/ package which parses incoming messages into media fragments (this pipeline is called when adding a msg to the cache),
+    # but we can't easily reuse that here since adding the incoming message to the cache must happen *after* we build the system prompt
+    # (otherwise the vector search will just return the new message itself as context).
+
+    # Remove bot mention from content for vector search query (if present)
+    content = message.content.replace(f"<@{disc.client.user.id}>", "").strip()
     semantic_candidates = await vector_search(
-        message.guild.id, message.channel.id, message.content, k=prompt.VECTOR_SEARCH_K
+        message.guild.id, message.channel.id, content, k=prompt.VECTOR_SEARCH_K
     )
+    # We meed only a subset of fields
+    semantic_candidates = [
+        {
+            "author": (await disc.client.fetch_user(c.get("author_id"))).display_name,  # resolve author IDs to display names
+            "title": c.get("title"),
+            "content": c.get("content"),
+            "type": c.get("type"),
+            "url": c.get("url"),
+        }
+        for c in semantic_candidates
+    ]
 
     # Build the system prompt
     parts: list[str] = []
