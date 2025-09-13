@@ -3,6 +3,7 @@ import asyncio, json
 from typing import List, Dict, Any
 from gregg_limper.clients import disc
 from discord import Message
+from gregg_limper.config import prompt
 from gregg_limper.memory.rag import (
     channel_summary as get_channel_summary,
     user_profile,
@@ -46,7 +47,7 @@ async def build_sys_prompt(message: Message) -> str:
     )
 
     semantic_candidates = await vector_search(
-        message.guild.id, message.channel.id, message.content, k=50
+        message.guild.id, message.channel.id, message.content, k=prompt.VECTOR_SEARCH_K
     )
 
     # Build the system prompt

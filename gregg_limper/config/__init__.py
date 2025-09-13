@@ -16,12 +16,14 @@ from .cache import Cache
 from .rag import Rag
 from .milvus import Milvus
 from .local_llm import LocalLLM
+from .prompt import Prompt
 
 core = Core()
 cache = Cache()
 rag = Rag()
 milvus = Milvus()
 local_llm = LocalLLM()
+prompt = Prompt()
 
 
 class Config:
@@ -30,6 +32,6 @@ class Config:
     rag = rag
     milvus = milvus
     local_llm = local_llm
+    prompt = prompt
 
-
-__all__ = ["core", "cache", "rag", "milvus", "local_llm", "Config"]
+__all__ = ["core", "cache", "rag", "milvus", "local_llm", "prompt", "Config"]

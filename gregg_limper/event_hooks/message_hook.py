@@ -54,5 +54,7 @@ async def handle(client: discord.Client, message: discord.Message):
     if not bot_mentioned:
         return
     
+
+    # NOTE: We need to grab the relevant context *before* caching the incoming message, otherwise our RAG vector search will return the new message itself as context.
     sys_prompt = await response.build_sys_prompt(message)  # DEBUGGING
     logger.info("System prompt\n: %s", sys_prompt)
