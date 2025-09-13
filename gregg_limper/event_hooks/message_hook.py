@@ -2,6 +2,7 @@ import discord
 from gregg_limper.memory.cache import GLCache
 from gregg_limper import commands
 from gregg_limper.config import core
+from gregg_limper import response
 
 
 import logging
@@ -52,3 +53,6 @@ async def handle(client: discord.Client, message: discord.Message):
     # 4) Start response pipeline if bot is mentioned
     if not bot_mentioned:
         return
+    
+    sys_prompt = await response.build_sys_prompt(message)  # DEBUGGING
+    logger.info("System prompt\n: %s", sys_prompt)

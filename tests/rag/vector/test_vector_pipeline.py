@@ -27,7 +27,7 @@ class FakeCollection:
         self,
         data,
         anns_field=None,
-        search_params=None,
+        param=None,
         limit=10,
         expr=None,
         output_fields=None,
