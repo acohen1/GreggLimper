@@ -17,17 +17,16 @@ from .prompt import build_sys_prompt
 from .cache_adapter import build_history
 
 
-async def handle(message: discord.Message, sys_prompt: str) -> str:
+async def handle(message: discord.Message) -> str:
     """
     Generate a reply using a pre-built system prompt.
-
-    ``sys_prompt`` must be constructed *before* the incoming message is cached
-    to ensure that retrieval-augmented lookups do not surface the message being
-    responded to. Conversation history is fetched here *after* caching so that
-    the latest message is included in the request to the model.
     """
 
     cache_msgs = await build_history(message.channel.id, core.CONTEXT_LENGTH)
+
+    # Generate the system prompt (RAG fetches inside)
+    sys_prompt = await build_sys_prompt(message)
+
     messages = [{"role": "system", "content": sys_prompt}, *cache_msgs]
 
     if local_llm.USE_LOCAL:
@@ -36,4 +35,4 @@ async def handle(message: discord.Message, sys_prompt: str) -> str:
         return await oai.chat(messages, model=core.MSG_MODEL_ID)
 
 
-__all__ = ["build_sys_prompt", "handle"]
+__all__ = ["handle"]

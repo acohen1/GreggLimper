@@ -58,10 +58,19 @@ async def build_sys_prompt(message: Message) -> str:
 
     # Remove bot mention from content for vector search query (if present)
     content = message.content.replace(f"<@{disc.client.user.id}>", "").strip()
+
+    # NOTE: we grab k+1 candidates since the incoming message may be returned as the top match;
+    # we will filter it out in the prompt construction below.
     semantic_candidates = await vector_search(
-        message.guild.id, message.channel.id, content, k=prompt.VECTOR_SEARCH_K
+        message.guild.id, message.channel.id, content, k=prompt.VECTOR_SEARCH_K + 1
     )
-    # We meed only a subset of fields
+
+    # Filter out the incoming message itself (if present)
+    semantic_candidates = [
+        c for c in semantic_candidates if c.get("message_id") != message.id
+    ][:prompt.VECTOR_SEARCH_K]  # limit to k results after filtering
+
+    # We need only a subset of fields for prompt construction
     semantic_candidates = [
         {
             "author": (await disc.client.fetch_user(c.get("author_id"))).display_name,  # resolve author IDs to display names

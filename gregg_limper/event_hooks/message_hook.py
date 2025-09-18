@@ -30,12 +30,6 @@ async def handle(client: discord.Client, message: discord.Message):
     if bot_mentioned:
         if await commands.dispatch(client, message):
             return
-        
-    # 3) If bot was mentioned (requires response), grab relevant context first
-    # NOTE: We need to grab the relevant context *before* caching the incoming message, otherwise our RAG vector search will return the new message itself as context.
-    if bot_mentioned:
-        sys_prompt = await response.build_sys_prompt(message)  # DEBUGGING
-        logger.info("System prompt\n: %s", sys_prompt)
 
     # 4) Add message to cache
     cache = GLCache()  # Singleton instance
@@ -58,5 +52,5 @@ async def handle(client: discord.Client, message: discord.Message):
     if not bot_mentioned:
         return
 
-    # response_text = await response.handle(message, sys_prompt)
-    # await message.channel.send(response_text)
+    response_text = await response.handle(message, sys_prompt)
+    await message.channel.send(response_text)
