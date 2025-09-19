@@ -73,23 +73,75 @@ async def build_sys_prompt(message: Message) -> str:
     print(f"Fragment contents for vector search: {frags_content}")
 
     # Perform vector search for each fragment content in all allowed channels
-    semantic_candidates = [
-        candidate
-        for content in frags_content
-        for c_id in core.CHANNEL_IDS
-        for candidate in await vector_search(
-            message.guild.id,
-            c_id,
-            content,
-            k=prompt.VECTOR_SEARCH_K + 1,   # +1 to account for possible self-match
-        )
-        if candidate.get("message_id") != message.id
-    ][:prompt.VECTOR_SEARCH_K]  # limit to k results after filtering
+    per_fragment_candidates: list[list[dict[str, Any]]] = []
+    for content in frags_content:
+        fragment_candidates: list[dict[str, Any]] = []
+        for c_id in core.CHANNEL_IDS:
+            results = await vector_search(
+                message.guild.id,
+                c_id,
+                content,
+                k=prompt.VECTOR_SEARCH_K + 1,  # +1 to account for possible self-match
+            )
+            filtered = [
+                candidate
+                for candidate in results
+                if candidate.get("message_id") != message.id
+            ]
+            fragment_candidates.extend(filtered)
+        per_fragment_candidates.append(fragment_candidates)
+
+    semantic_candidates: list[dict[str, Any]] = []
+    seen_candidate_ids: set[int] = set()
+    indices = [0] * len(per_fragment_candidates)
+
+    # Round-robin merge candidates from each fragment until we reach k unique ones
+    while len(semantic_candidates) < prompt.VECTOR_SEARCH_K and per_fragment_candidates:
+        progress_made = False
+        for frag_idx, candidates in enumerate(per_fragment_candidates):
+            if len(semantic_candidates) >= prompt.VECTOR_SEARCH_K:
+                break
+
+            while indices[frag_idx] < len(candidates):
+                candidate = candidates[indices[frag_idx]]
+                indices[frag_idx] += 1
+                candidate_id = candidate.get("id")
+
+                if candidate_id is not None and candidate_id in seen_candidate_ids:
+                    continue
+
+                if candidate_id is not None:
+                    seen_candidate_ids.add(candidate_id)
+
+                semantic_candidates.append(candidate)
+                progress_made = True
+                break
+
+        if not progress_made:
+            break
 
     # We need only a subset of fields for prompt construction
+    author_ids = {
+        candidate.get("author_id")
+        for candidate in semantic_candidates
+        if candidate.get("author_id") is not None
+    }
+
+    author_names: dict[int, str] = {}
+    for author_id in author_ids:
+        try:
+            user = await disc.client.fetch_user(author_id)
+        except Exception as exc:
+            logger.warning("Failed to fetch author %s display name: %s", author_id, exc)
+            continue
+        author_names[author_id] = user.display_name
+
     semantic_candidates = [
         {
-            "author": (await disc.client.fetch_user(candidate.get("author_id"))).display_name,
+            "author": author_names.get(
+                candidate.get("author_id"),
+                "Unknown" if candidate.get("author_id") is None else str(candidate.get("author_id")),
+            ),
             "title": candidate.get("title"),
             "content": candidate.get("content"),
             "type": candidate.get("type"),
