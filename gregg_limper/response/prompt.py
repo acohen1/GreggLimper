@@ -70,8 +70,6 @@ async def build_sys_prompt(message: Message) -> str:
     # Log the fragment contents for debugging
     logger.info(f"Fragment contents for vector search: {frags_content}")
 
-    print(f"Fragment contents for vector search: {frags_content}")
-
     # Perform vector search for each fragment content in all allowed channels
     per_fragment_candidates: list[list[dict[str, Any]]] = []
     for content in frags_content:
