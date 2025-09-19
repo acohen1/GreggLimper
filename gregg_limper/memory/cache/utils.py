@@ -1,5 +1,12 @@
-import textwrap
+"""
+Internal helpers shared within the cache package.
 
+This module currently provides logging utilities that summarize fragment
+payloads when the cache records memo activity. The functions are intentionally
+prefixed with underscores to signal that they are not part of the public API.
+"""
+
+import textwrap
 
 def _frag_summary(frag, *, width: int = 20) -> str:
     """Return a compact one-line summary for logs: e.g., text:'Hello…'."""

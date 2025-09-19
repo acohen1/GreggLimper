@@ -1,4 +1,12 @@
-"""Discord history hydration for the cache manager."""
+"""
+Discord history hydration for the cache manager.
+
+``CacheInitializer`` drives the startup routine that pulls message history from
+Discord, formats missing memos, and reconciles persisted memo snapshots. The
+cache manager instantiates this helper during :meth:`GLCache.initialize`, but it
+can also be reused by tests or tools that need to hydrate channel state outside
+of the singleton lifecycle.
+"""
 
 from __future__ import annotations
 

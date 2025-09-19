@@ -1,6 +1,18 @@
-"""Cache manager coordinating channel state, memos, and ingestion."""
+"""
+Cache manager coordinating channel state, memos, and ingestion.
+
+The :class:`GLCache` singleton is the public entry point for the cache package.
+
+It exposes high-level read and write helpers that wrap the lower-level modules
+responsible for channel state, memo persistence, formatting, and ingestion.
+
+Consumers obtain the singleton via ``GLCache()`` and call methods like
+``add_message`` or ``list_formatted_messages``; tests can also reset the
+singleton by clearing ``GLCache._instance`` between runs.
+"""
 
 from __future__ import annotations
+from typing import ClassVar
 
 import logging
 from typing import List
@@ -22,13 +34,18 @@ logger = logging.getLogger(__name__)
 class GLCache:
     """Singleton, channel-aware cache with memoized message formatting."""
 
-    _instance: "GLCache" | None = None
+    _instance: ClassVar["GLCache | None"] = None
+
+    # Instance attributes
+    _states: dict[int, ChannelCacheState]
+    _memo_store: MemoStore
 
     def __new__(cls) -> "GLCache":
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._states: dict[int, ChannelCacheState] = {}
-            cls._instance._memo_store = MemoStore()
+            self = super().__new__(cls)
+            self._states = {}
+            self._memo_store = MemoStore()
+            cls._instance = self
         return cls._instance
 
     # ------------------------------------------------------------------ #

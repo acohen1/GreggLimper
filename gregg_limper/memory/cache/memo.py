@@ -1,15 +1,17 @@
 """
 Persistent memo store for cached message fragments.
 
-Each Discord channel gets a gzipped JSON file:
+Memo files are stored per Discord channel as gzipped JSON documents with a
+simple mapping schema::
+
     {msg_id: {"author": str, "fragments": [Fragment-as-dict, ...]}, ...}
 
-Helpers:
-    - exists(channel_id)
-    - load(channel_id)
-    - prune(channel_id, memo_dict)
-    - save(channel_id, memo_dict)
+The public helpers in this module mirror that schema. Callers can check for a
+memo file with :func:`exists`, load and deserialize fragments with
+:func:`load`, reduce the payload to the configured cache length with
+:func:`prune`, and atomically write updates with :func:`save`.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

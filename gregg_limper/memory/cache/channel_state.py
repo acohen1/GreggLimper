@@ -1,4 +1,12 @@
-"""Channel-local cache state helpers."""
+"""
+Channel-local cache state helpers.
+
+The :class:`ChannelCacheState` dataclass wraps the deque of Discord messages and
+an accompanying membership index for a single channel. The cache manager uses
+these helpers to append messages with eviction awareness, iterate in chronological
+order, and keep the memo store synchronized with the currently buffered IDs.
+Callers should only interact with this module via :class:`ChannelCacheState`.
+"""
 
 from __future__ import annotations
 

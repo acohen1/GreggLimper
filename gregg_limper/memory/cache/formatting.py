@@ -1,4 +1,13 @@
-"""Formatting helpers used by the cache."""
+"""
+Formatting helpers used by the cache.
+
+This module bridges the cache with the shared formatter service.  The
+``format_for_cache`` coroutine produces the memo payload persisted for each
+message, while :func:`format_missing_messages` batches formatting with a
+semaphore to avoid overwhelming the formatter during cache hydration. These
+helpers are internal to the cache package and are consumed by :mod:`manager`
+and :mod:`initializer`.
+"""
 
 from __future__ import annotations
 

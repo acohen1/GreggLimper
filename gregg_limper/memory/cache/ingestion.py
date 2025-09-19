@@ -1,4 +1,13 @@
-"""RAG ingestion orchestration for cached messages."""
+"""
+RAG ingestion orchestration for cached messages.
+
+The cache defers to this module for deciding if messages should be pushed into
+downstream retrieval stores and for performing the ingestion. External callers
+should use :func:`evaluate_ingestion` to combine user consent checks with
+duplicate detection and then invoke :func:`ingest_message` to persist the memo
+payload. Both functions are resilient to downstream errors and log failures
+without raising so the cache can continue operating.
+"""
 
 from __future__ import annotations
 

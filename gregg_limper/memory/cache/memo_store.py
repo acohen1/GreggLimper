@@ -1,4 +1,12 @@
-"""In-memory memo registry with disk persistence helpers."""
+"""
+In-memory memo registry with disk persistence helpers.
+
+``MemoStore`` mirrors the memoized payloads that back each cached message.
+It offers dictionary-like accessors plus utilities for loading channel memos
+from disk, pruning them to the configured cache length, and saving snapshots
+after mutations. The cache manager instantiates a single store and shares it
+across channel operations.
+"""
 
 from __future__ import annotations
 

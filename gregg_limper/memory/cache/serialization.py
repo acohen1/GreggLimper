@@ -1,4 +1,13 @@
-"""Memo serialization helpers."""
+"""
+Memo serialization helpers.
+
+Expose utilities for converting memo payloads into structures consumed by
+callers. 
+
+:func:`serialize` transforms memo fragments into the compact LLM view
+or full-fidelity dictionaries, while :func:`copy_memo_entry` returns a shallow
+copy suitable for mutation by callers without affecting the memo store.
+"""
 
 from __future__ import annotations
 
