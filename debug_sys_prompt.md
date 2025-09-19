@@ -24,14 +24,7 @@ Do not respond in this format unless explicitly instructed. This schema is only 
   {
     "author": "Alex",
     "title": null,
-    "content": "Oracle up 40% today off of earnings... raised revenue guidance for their cloud/data infra from $18bn to $144bn <a:Woow:1007797017256407162>",
-    "type": "text",
-    "url": null
-  },
-  {
-    "author": "Alex",
-    "title": null,
-    "content": "Apple",
+    "content": "<@1299961656595710024>",
     "type": "text",
     "url": null
   },
@@ -39,6 +32,13 @@ Do not respond in this format unless explicitly instructed. This schema is only 
     "author": "Alex",
     "title": null,
     "content": "<@1299961656595710024> /rag_opt_in",
+    "type": "text",
+    "url": null
+  },
+  {
+    "author": "Alex",
+    "title": null,
+    "content": "<@1299961656595710024> Larry Ellison",
     "type": "text",
     "url": null
   }

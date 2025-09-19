@@ -11,6 +11,10 @@ from gregg_limper.memory.rag import (
     vector_search,
 )
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # TODO: Better system prompt preface for the channel summary, user profiles, and semantic memory
 
 MESSAGE_SCHEMA = """
@@ -62,6 +66,9 @@ async def build_sys_prompt(message: Message) -> str:
         for content in [fragment.content_text()]
         if content.strip()
     ]
+
+    # Log the fragment contents for debugging
+    logger.info(f"Fragment contents for vector search: {frags_content}")
 
     print(f"Fragment contents for vector search: {frags_content}")
 
