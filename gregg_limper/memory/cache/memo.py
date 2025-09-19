@@ -46,6 +46,7 @@ def load(channel_id: int) -> Dict[int, dict]:
         raw = json.load(f)
     out: Dict[int, dict] = {}
     for k, v in raw.items():
+        # Rehydrate fragment instances so the cache can reuse formatter helpers directly.
         frags = [fragment_from_dict(fd) for fd in v.get("fragments", [])]
         out[int(k)] = {"author": v.get("author"), "fragments": frags}
     return out
@@ -54,6 +55,7 @@ def load(channel_id: int) -> Dict[int, dict]:
 def prune(channel_id: int, memo_dict: Dict[int, dict]) -> Dict[int, dict]:
     if len(memo_dict) <= cache.CACHE_LENGTH:
         return memo_dict
+    # Keep only the newest entries so the on-disk snapshot mirrors in-memory retention.
     items = list(memo_dict.items())[-cache.CACHE_LENGTH:]
     return dict(items)
 
@@ -61,6 +63,7 @@ def prune(channel_id: int, memo_dict: Dict[int, dict]) -> Dict[int, dict]:
 def save(channel_id: int, memo_dict: Dict[int, dict]) -> None:
     p = _path(channel_id)
     tmp = p.with_suffix(".tmp")
+    # Convert keys and fragment payloads into JSON-friendly structures before writing.
     serializable = {
         str(k): {
             "author": v.get("author"),
@@ -70,4 +73,5 @@ def save(channel_id: int, memo_dict: Dict[int, dict]) -> None:
     }
     with gzip.open(tmp, "wt", encoding="utf-8") as f:
         json.dump(serializable, f)
+    # Atomic rename keeps partially written files from being observed by other processes.
     os.replace(tmp, p)

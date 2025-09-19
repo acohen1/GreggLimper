@@ -42,6 +42,7 @@ class GLCache:
 
     def __new__(cls) -> "GLCache":
         if cls._instance is None:
+            # Lazily allocate so a reset between tests can just null out ``_instance``.
             self = super().__new__(cls)
             self._states = {}
             self._memo_store = MemoStore()
@@ -79,11 +80,15 @@ class GLCache:
         state = self._get_state(channel_id)
         msg_id = message_obj.id
 
+        # Check memo existence before mutating so we know if formatting can be skipped.
         memo_present = self._memo_store.has(msg_id)
+        # Append first so eviction logic reflects the cache's retention policy.
         evicted_id = state.append(message_obj)
         if evicted_id is not None:
+            # Drop any memo tied to the evicted message to keep disk snapshots aligned.
             self._memo_store.delete(evicted_id)
 
+        # Evaluate ingestion ahead of formatting so downstream checks can reuse old memos.
         should_ingest, resources = await ingestion.evaluate_ingestion(
             message_obj, ingest_requested=ingest, memo_present=memo_present
         )
@@ -94,19 +99,23 @@ class GLCache:
         elif memo_present:
             record = self._memo_store.get(msg_id)
         else:
+            # Formatter runs only when this message lacks memoized fragments.
             record = await formatting.format_for_cache(message_obj)
             self._memo_store.set(msg_id, record)
 
         if should_ingest and not resources.sqlite:
+            # Only push to RAG if storage confirmed the message is missing.
             await ingestion.ingest_message(channel_id, message_obj, record)
 
         if not memo_present or evicted_id is not None or cache_msg is not None:
+            # Persist the latest retention window whenever memo membership changes.
             self._memo_store.save_channel_snapshot(channel_id, state.message_ids())
 
         if logger.isEnabledFor(logging.INFO):
             preview = _frags_preview(
                 record.get("fragments", []), width_each=20, max_total_chars=200
             )
+            # Summarize fragment activity so operators can trace cache churn at INFO level.
             logger.info(
                 "Cached msg %s in channel %s (%s) by %s | Frags: %s",
                 msg_id,
@@ -238,12 +247,14 @@ class GLCache:
         :return: ``None``. The singleton is primed with fresh state and memo data.
         """
         if self._states and set(self._states.keys()) == set(channel_ids):
+            # Fast-path repeated initializations to avoid redundant history fetches.
             logger.info("Cache already initialized with same channel IDs. Skipping.")
             return
 
         self._states = {
             cid: ChannelCacheState(cid, cache.CACHE_LENGTH) for cid in channel_ids
         }
+        # Toss any previously memoized entries so hydration rebuilds from disk cleanly.
         self._memo_store.reset()
 
         initializer = CacheInitializer(self, self._memo_store)

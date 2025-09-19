@@ -44,13 +44,16 @@ async def evaluate_ingestion(
         return False, resources
 
     try:
+        # Respect user consent before touching downstream stores.
         if not await consent.is_opted_in(message.author.id):
             return False, resources
+        # We only fan out ingest work when storage lacks the message snapshot.
         exists = await rag.message_exists(message.id)
         resources.sqlite = exists
         resources.vector = exists
         return True, resources
     except Exception:
+        # Downstream checks should not break caching; log and tell the caller to skip ingest.
         logger.exception("Failed to evaluate ingestion state for message %s", message.id)
         resources.sqlite = resources.vector = False
         return False, resources
@@ -62,6 +65,7 @@ async def ingest_message(channel_id: int, message: Message, cache_message: dict)
     try:
         created_at = message.created_at
         if created_at.tzinfo is None:
+            # Normalize naive timestamps so cross-region persistence is consistent.
             created_at = created_at.replace(tzinfo=datetime.timezone.utc)
         await rag.ingest_cache_message(
             server_id=message.guild.id if message.guild else 0,
@@ -72,4 +76,5 @@ async def ingest_message(channel_id: int, message: Message, cache_message: dict)
             cache_message=cache_message,
         )
     except Exception:
+        # Ingestion is best-effort—failures should not stop the cache from moving forward.
         logger.exception("RAG ingestion failed for message %s", message.id)

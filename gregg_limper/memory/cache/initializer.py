@@ -40,6 +40,7 @@ class CacheInitializer:
 
         for channel_id in channel_ids:
             loaded_ids = self._memo_store.load_channel(channel_id)
+            # Preload persisted fragments so the cache can reuse existing memo payloads.
             channel = client.get_channel(channel_id)
             if not isinstance(channel, TextChannel):
                 logger.warning(
@@ -54,17 +55,21 @@ class CacheInitializer:
                 async for message in channel.history(limit=cache.CACHE_LENGTH)
             ]
             messages: List[Message] = list(reversed(history))
+            # Discord yields newest-first; reverse so append order matches live traffic.
 
             formatted_missing = await format_missing_messages(
                 messages, self._memo_store.has, cache.INIT_CONCURRENCY
             )
+            # Only schedule formatter work for ids missing from the memo store.
 
             ingest_sem = asyncio.Semaphore(cache.INGEST_CONCURRENCY)
             ingest_tasks: list[asyncio.Task[None]] = []
+            # Limit concurrent ingestion during startup to avoid spiking downstream services.
 
             for message in messages:
                 payload = formatted_missing.get(message.id)
                 try:
+                    # Hydration replays history into the cache without triggering ingest twice.
                     await self._cache.add_message(
                         channel_id, message, ingest=False, cache_msg=payload
                     )
@@ -75,6 +80,7 @@ class CacheInitializer:
                 should_ingest, resources = await evaluate_ingestion(
                     message, ingest_requested=True, memo_present=True
                 )
+                # After caching succeeds, decide whether to backfill ingestion for the message.
                 if should_ingest and not resources.sqlite:
                     ingest_tasks.append(
                         asyncio.create_task(
@@ -83,12 +89,14 @@ class CacheInitializer:
                     )
 
             if ingest_tasks:
+                # Ensure ingestion completes before reconciling snapshots with disk.
                 await asyncio.gather(*ingest_tasks)
 
             state = self._cache._get_state(channel_id)
             self._memo_store.reconcile_channel(
                 channel_id, state.message_ids(), loaded_ids
             )
+            # Snapshot reflects the new cache ordering plus any evictions from hydration.
 
         logger.info("Initialized caches for %s channels", len(channel_ids))
 

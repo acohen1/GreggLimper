@@ -59,6 +59,7 @@ class MemoStore:
         """Load memo records from disk for ``channel_id``."""
 
         loaded = memo.load(channel_id) if memo.exists(channel_id) else {}
+        # Merge disk snapshots into memory so callers can reuse fragments immediately.
         self._records.update(loaded)
         return set(loaded.keys())
 
@@ -66,7 +67,9 @@ class MemoStore:
         """Persist memo snapshot for ``channel_id`` covering ``message_ids``."""
 
         ordered_ids = list(message_ids)
+        # Preserve cache ordering when selecting memo payloads for the snapshot.
         memo_dict = {mid: self._records[mid] for mid in ordered_ids if mid in self._records}
+        # Ensure disk state enforces the global cache length just like in-memory state.
         memo_dict = memo.prune(channel_id, memo_dict)
         memo.save(channel_id, memo_dict)
 
@@ -81,6 +84,7 @@ class MemoStore:
         keep_ids = list(message_ids)
         stale_ids = set(previously_loaded) - set(keep_ids)
         for mid in stale_ids:
+            # Drop memos for messages that aged out of the cache during hydration.
             self._records.pop(mid, None)
         self.save_channel_snapshot(channel_id, keep_ids)
 

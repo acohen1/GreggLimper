@@ -21,10 +21,12 @@ def serialize(cache_msg: dict, mode: Mode) -> dict:
 
     fragments = cache_msg.get("fragments", [])
     if mode == "llm":
+        # Compact form strips fragment metadata to what downstream prompting needs.
         return {
             "author": cache_msg.get("author"),
             "fragments": [frag.to_llm() for frag in fragments],
         }
+    # Full form keeps every field so operators can inspect the formatter output verbatim.
     return {
         "author": cache_msg.get("author"),
         "fragments": [frag.to_dict() for frag in fragments],
@@ -35,6 +37,7 @@ def copy_memo_entry(cache_msg: dict | None) -> dict:
     """Return a shallow copy of ``cache_msg`` safe for callers."""
 
     if cache_msg is None:
+        # Provide a predictable empty skeleton for callers expecting fragment-like structures.
         return {"author": None, "fragments": []}
     return {
         "author": cache_msg.get("author"),

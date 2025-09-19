@@ -34,11 +34,13 @@ class ChannelCacheState:
         """Append ``message`` to the channel, returning any evicted id."""
 
         evicted_id: int | None = None
+        # Cache eviction happens on append; capture the outgoing id so we can retire it below.
         if len(self._messages) == self._messages.maxlen:
             evicted = self._messages[0]
             evicted_id = evicted.id
         self._messages.append(message)
         self._index.add(message.id)
+        # The deque mutates implicitly, so purge the mirrored membership set when needed.
         if evicted_id is not None:
             self._index.discard(evicted_id)
         return evicted_id
@@ -74,6 +76,7 @@ class ChannelCacheState:
     def sync_from_messages(self, messages: Sequence[Message]) -> None:
         """Replace state with ``messages`` while rebuilding membership index."""
 
+        # Used during hydration: rebuild the deque and index as a single atomic snapshot.
         self._messages = deque(messages, maxlen=self.maxlen)
         self._index = {m.id for m in self._messages}
 

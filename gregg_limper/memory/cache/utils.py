@@ -24,6 +24,7 @@ def _frags_preview(frags, *, width_each: int = 20, max_total_chars: int = 200) -
     total = 0
     for f in frags:
         s = _frag_summary(f, width=width_each)
+        # Once the preview budget is spent, bail early with an ellipsis marker.
         if total + len(s) + (2 if parts else 0) > max_total_chars:
             parts.append("…")
             break

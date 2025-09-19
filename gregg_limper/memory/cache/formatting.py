@@ -39,6 +39,7 @@ async def format_missing_messages(
     tasks: List[asyncio.Task[tuple[int, dict | None]]] = []
 
     async def _format_one(msg: Message) -> tuple[int, dict | None]:
+        # Reuse one semaphore across tasks so the formatter never sees more than ``concurrency``.
         async with semaphore:
             try:
                 payload = await format_for_cache(msg)
@@ -48,10 +49,12 @@ async def format_missing_messages(
         return msg.id, payload
 
     for message in messages:
+        # Skip already memoized messages; the cache only needs fragments for unseen ids.
         if not has_memo(message.id):
             tasks.append(asyncio.create_task(_format_one(message)))
 
     results: Dict[int, dict] = {}
+    # Consume tasks as they complete so slow formatter responses do not block faster ones.
     for coro in asyncio.as_completed(tasks):
         mid, payload = await coro
         if payload is not None:
