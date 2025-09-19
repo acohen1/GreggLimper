@@ -20,7 +20,7 @@ async def build_history(channel_id: int, limit: int) -> List[dict]:
 
     cache = GLCache()
     # Fetch the last `limit` messages in oldest -> newest order
-    formatted = cache.get_messages_llm(channel_id, n=limit)
+    formatted = cache.get_serialized_messages(channel_id, "llm", n=limit)
 
     if not formatted:
         return []

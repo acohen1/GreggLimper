@@ -41,7 +41,7 @@ async def handle(client: discord.Client, message: discord.Message):
 
 
     # DEBUGGING
-    recent_messages = cache.get_messages_llm(message.channel.id, 5)
+    recent_messages = cache.get_serialized_messages(message.channel.id, "llm", n=5)
     for m in recent_messages:
         m_str = json.dumps(m, ensure_ascii=False, separators=(",", ": "))
         logger.info(
@@ -52,5 +52,5 @@ async def handle(client: discord.Client, message: discord.Message):
     if not bot_mentioned:
         return
 
-    response_text = await response.handle(message, sys_prompt)
+    response_text = await response.handle(message)
     await message.channel.send(response_text)

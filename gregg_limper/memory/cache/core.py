@@ -214,34 +214,110 @@ class GLCache:
             raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
         return list(self._caches[channel_id])
 
-    # TODO: If we need even more views, we could collapse the get_messages_llm and get_messages_full
-    # into a single method with a "mode" parameter (e.g., "llm", "full", "debug").
-
-    def get_messages_llm(self, channel_id: int, n: int | None = None) -> list[dict]:
+    def get_serialized_messages(self, channel_id: int, mode: Mode, n: int | None = None) -> list[dict]:
         """
-        Return recent messages formatted for LLM prompts.
+        Retrieve up to ``n`` most recent cached messages serialized for the requested mode.
+
+        Notes
+        - ``mode`` controls the shape: ``"llm"`` yields a prompt-ready subset; ``"full"`` returns all memo fields.
+        - Order is chronological (oldest -> newest) among the selected messages.
 
         :param channel_id: Discord channel id.
-        :param n: Optional max number of messages to return.
-        :returns: List of serialized message dicts (oldest -> newest).
+        :param mode: Serialization mode to use (e.g., ``"llm"`` or ``"full"``).
+        :param n: Optional limit of the most recent messages to include. ``None`` returns all cached messages.
+        :returns: List of serialized message dicts for up to ``n`` messages ordered oldest -> newest.
         """
         return [
-            self._serialize(self._memo[m.id], "llm")
+            self._serialize(self._memo[m.id], mode)
             for m in self._iter_msgs(channel_id, n)
         ]
 
-    def get_messages_full(self, channel_id: int, n: int | None = None) -> list[dict]:
+    def get_unserialized_messages(self, channel_id: int, n: int | None = None) -> list[dict]:
         """
-        Return recent messages with full fragment details.
+        Retrieve up to ``n`` most recent cached messages in raw memo form.
+
+        Notes
+        - Provides a thin bridge to the memo table for consumers that need raw fragments.
+        - Each entry is a shallow copy of the memo record containing ``author`` and ``fragments``.
+        - ``fragments`` holds :class:`gregg_limper.formatter.model.Fragment` instances; treat them as read-only unless deep-copied.
+        - Order is chronological (oldest -> newest) among the selected messages.
 
         :param channel_id: Discord channel id.
-        :param n: Optional max number of messages to return.
-        :returns: List of serialized message dicts (oldest -> newest).
+        :param n: Optional limit of the most recent messages to include. ``None`` returns all cached messages.
+        :returns: List of memo dicts for up to ``n`` messages ordered oldest -> newest.
         """
-        return [
-            self._serialize(self._memo[m.id], "full")
-            for m in self._iter_msgs(channel_id, n)
-        ]
+        if channel_id not in self._caches:
+            raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
+
+        out: list[dict] = []
+        for m in self._iter_msgs(channel_id, n):
+            rec = self._memo.get(m.id, {"author": None, "fragments": []})
+            out.append({
+                "author": rec.get("author"),
+                "fragments": list(rec.get("fragments", [])),  # shallow copy list
+            })
+        return out
+
+    def get_serialized_message_by_id(self, channel_id: int, message_id: int, mode: Mode) -> dict:
+        """
+        Retrieve a cached message by id serialized for the requested mode.
+
+        Notes
+        - Raises ``KeyError`` if the channel is unknown or the message is not cached.
+        - Each result is produced via ``_serialize`` for the requested ``mode``.
+
+        :param channel_id: Discord channel id.
+        :param message_id: Discord message id.
+        :param mode: Serialization mode to use (e.g., ``"llm"`` or ``"full"``).
+        :returns: Serialized representation of the cached message.
+        """
+        if channel_id not in self._caches:
+            raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
+
+        if not any(m.id == message_id for m in self._caches[channel_id]):
+            raise KeyError(
+                f"Message ID {message_id} is not cached for channel {channel_id}."
+            )
+
+        cache_msg = self._memo.get(message_id)
+        if cache_msg is None:
+            raise KeyError(
+                f"Message ID {message_id} does not have a memoized record."
+            )
+
+        return self._serialize(cache_msg, mode)
+
+    def get_unserialized_message_by_id(self, channel_id: int, message_id: int) -> dict:
+        """
+        Retrieve a cached message by id in raw memo form.
+
+        Notes
+        - Raises ``KeyError`` if the channel is unknown or the message is not cached.
+        - Provides a shallow copy of the memo entry with fragments preserved by reference.
+        - ``fragments`` holds :class:`gregg_limper.formatter.model.Fragment` instances; treat them as read-only unless deep-copied.
+
+        :param channel_id: Discord channel id.
+        :param message_id: Discord message id.
+        :returns: Memo dict for the cached message.
+        """
+        if channel_id not in self._caches:
+            raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
+
+        if not any(m.id == message_id for m in self._caches[channel_id]):
+            raise KeyError(
+                f"Message ID {message_id} is not cached for channel {channel_id}."
+            )
+
+        rec = self._memo.get(message_id)
+        if rec is None:
+            raise KeyError(
+                f"Message ID {message_id} does not have a memoized record."
+            )
+
+        return {
+            "author": rec.get("author"),
+            "fragments": list(rec.get("fragments", [])),
+        }
 
     # ------------------------------------------------------------------ #
     # INITIALIZATION
@@ -439,3 +515,6 @@ class GLCache:
         for msg in self._caches[channel_id]:
             self._memo.pop(msg.id, None)  # safe even if already removed
         self._caches[channel_id].clear()
+
+
+
