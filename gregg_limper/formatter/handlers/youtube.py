@@ -13,6 +13,8 @@ YouTubeHandler Pipeline
 NOTE: We tolerate thumbnail-vision failures here and keep title/description.
 """
 
+# TODO: Implement YouTube shorts handling.
+
 import asyncio
 from typing import List, Tuple
 from urllib.parse import urlparse, parse_qs
