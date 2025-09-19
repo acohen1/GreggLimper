@@ -59,53 +59,6 @@ class GLCache:
     # WRITE helpers
     # ------------------------------------------------------------------ #
 
-    def _get_channel_cache(self, channel_id: int) -> deque[Message]:
-        """Return the deque for ``channel_id`` and refresh the membership index."""
-
-        try:
-            cache = self._caches[channel_id]
-        except KeyError as exc:
-            raise KeyError(
-                f"Channel ID {channel_id} is not configured for caching."
-            ) from exc
-
-        ids = self._index.get(channel_id)
-        if (
-            ids is None
-            or len(ids) != len(cache)
-            or any(m.id not in ids for m in cache)
-        ):
-            self._index[channel_id] = {m.id for m in cache}
-        return cache
-
-    def _get_memo_entry(self, channel_id: int, message_id: int) -> dict:
-        """Return memoized message data after confirming channel membership."""
-
-        self._get_channel_cache(channel_id)
-        index = self._index[channel_id]
-        if message_id not in index:
-            raise KeyError(
-                f"Message ID {message_id} is not cached for channel {channel_id}."
-            )
-
-        cache_msg = self._memo.get(message_id)
-        if cache_msg is None:
-            raise KeyError(
-                f"Message ID {message_id} does not have a memoized record."
-            )
-        return cache_msg
-
-    @staticmethod
-    def _memo_snapshot(cache_msg: dict | None) -> dict:
-        """Return a shallow copy of ``cache_msg`` suitable for callers."""
-
-        if cache_msg is None:
-            return {"author": None, "fragments": []}
-        return {
-            "author": cache_msg.get("author"),
-            "fragments": list(cache_msg.get("fragments", [])),
-        }
-
     async def add_message(
         self,
         channel_id: int,
@@ -216,6 +169,54 @@ class GLCache:
     # READ helpers
     # ------------------------------------------------------------------ #
 
+    def _get_channel_cache(self, channel_id: int) -> deque[Message]:
+        """Return the deque for ``channel_id`` and refresh the membership index."""
+
+        try:
+            cache = self._caches[channel_id]
+        except KeyError as exc:
+            raise KeyError(
+                f"Channel ID {channel_id} is not configured for caching."
+            ) from exc
+
+        ids = self._index.get(channel_id)
+        if (
+            ids is None
+            or len(ids) != len(cache)
+            or any(m.id not in ids for m in cache)
+        ):
+            self._index[channel_id] = {m.id for m in cache}
+        return cache
+
+    def _get_memo_entry(self, channel_id: int, message_id: int) -> dict:
+        """Return memoized message data after confirming channel membership."""
+
+        self._get_channel_cache(channel_id)
+        index = self._index[channel_id]
+        if message_id not in index:
+            raise KeyError(
+                f"Message ID {message_id} is not cached for channel {channel_id}."
+            )
+
+        cache_msg = self._memo.get(message_id)
+        if cache_msg is None:
+            raise KeyError(
+                f"Message ID {message_id} does not have a memoized record."
+            )
+        return cache_msg
+
+    @staticmethod
+    def _copy_memo_entry(cache_msg: dict | None) -> dict:
+        """Return a shallow copy of ``cache_msg`` suitable for callers."""
+
+        if cache_msg is None:
+            return {"author": None, "fragments": []}
+        return {
+            "author": cache_msg.get("author"),
+            "fragments": list(cache_msg.get("fragments", [])),
+        }
+
+
     @staticmethod
     def _serialize(cache_msg: dict, mode: Mode) -> dict:
         """
@@ -307,7 +308,7 @@ class GLCache:
         """
 
         return [
-            self._memo_snapshot(self._memo.get(m.id))
+            self._copy_memo_entry(self._memo.get(m.id))
             for m in self._iter_msgs(channel_id, n)
         ]
 
@@ -340,7 +341,7 @@ class GLCache:
         """
 
         cache_msg = self._get_memo_entry(channel_id, message_id)
-        return self._memo_snapshot(cache_msg)
+        return self._copy_memo_entry(cache_msg)
 
     # ------------------------------------------------------------------ #
     # INITIALIZATION
