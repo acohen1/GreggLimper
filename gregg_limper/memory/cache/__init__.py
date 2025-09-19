@@ -1,5 +1,5 @@
 """Short-term message cache package."""
 
-from .core import GLCache
+from .manager import GLCache
 
 __all__ = ["GLCache"]
