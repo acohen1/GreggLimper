@@ -3,7 +3,8 @@ import asyncio, json
 from typing import List, Dict, Any
 from gregg_limper.clients import disc
 from discord import Message
-from gregg_limper.config import prompt
+from gregg_limper.config import prompt, core
+from gregg_limper.memory.cache import GLCache
 from gregg_limper.memory.rag import (
     channel_summary as get_channel_summary,
     user_profile,
@@ -48,38 +49,46 @@ async def build_sys_prompt(message: Message) -> str:
         if user_mentions else []
     )
 
-    # Semantic memory (vector search)
-    # TODO: We should really be comparing each fragment in the incoming message to the ones in semantic memory (vector_search).
-    # At the moment, we simply take the message content as the vector search query, which is suboptimal if the message contains
-    # images, links, or other non-text fragments.
-    # We already have logic in the formatter/ package which parses incoming messages into media fragments (this pipeline is called when adding a msg to the cache),
-    # but we can't easily reuse that here since adding the incoming message to the cache must happen *after* we build the system prompt
-    # (otherwise the vector search will just return the new message itself as context).
+    # ------- Semantic memory (vector search) -------
 
-    # Remove bot mention from content for vector search query (if present)
-    content = message.content.replace(f"<@{disc.client.user.id}>", "").strip()
+    # Grab media fragments from the inbound message
+    cache = GLCache()
+    memo_record = cache.get_memo_record(message.channel.id, message.id)
 
-    # NOTE: we grab k+1 candidates since the incoming message may be returned as the top match;
-    # we will filter it out in the prompt construction below.
-    semantic_candidates = await vector_search(
-        message.guild.id, message.channel.id, content, k=prompt.VECTOR_SEARCH_K + 1
-    )
+    # From each media fragment, get its content_text (used for vector search query)
+    frags_content = [
+        content
+        for fragment in memo_record.get("fragments", [])
+        for content in [fragment.content_text()]
+        if content.strip()
+    ]
 
-    # Filter out the incoming message itself (if present)
+    print(f"Fragment contents for vector search: {frags_content}")
+
+    # Perform vector search for each fragment content in all allowed channels
     semantic_candidates = [
-        c for c in semantic_candidates if c.get("message_id") != message.id
+        candidate
+        for content in frags_content
+        for c_id in core.CHANNEL_IDS
+        for candidate in await vector_search(
+            message.guild.id,
+            c_id,
+            content,
+            k=prompt.VECTOR_SEARCH_K + 1,   # +1 to account for possible self-match
+        )
+        if candidate.get("message_id") != message.id
     ][:prompt.VECTOR_SEARCH_K]  # limit to k results after filtering
 
     # We need only a subset of fields for prompt construction
     semantic_candidates = [
         {
-            "author": (await disc.client.fetch_user(c.get("author_id"))).display_name,  # resolve author IDs to display names
-            "title": c.get("title"),
-            "content": c.get("content"),
-            "type": c.get("type"),
-            "url": c.get("url"),
+            "author": (await disc.client.fetch_user(candidate.get("author_id"))).display_name,
+            "title": candidate.get("title"),
+            "content": candidate.get("content"),
+            "type": candidate.get("type"),
+            "url": candidate.get("url"),
         }
-        for c in semantic_candidates
+        for candidate in semantic_candidates
     ]
 
     # Build the system prompt

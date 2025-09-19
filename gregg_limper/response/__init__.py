@@ -16,6 +16,9 @@ from gregg_limper.clients import oai, ollama
 from .prompt import build_sys_prompt
 from .cache_adapter import build_history
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 async def handle(message: discord.Message) -> str:
     """
@@ -26,6 +29,12 @@ async def handle(message: discord.Message) -> str:
 
     # Generate the system prompt (RAG fetches inside)
     sys_prompt = await build_sys_prompt(message)
+
+    # Log the system prompt for debugging (write to a file due to length)
+    with open("debug_sys_prompt.md", "w", encoding="utf-8") as f:
+        f.write(sys_prompt)
+        logger.debug(f"System prompt written to debug_sys_prompt.md")
+
 
     messages = [{"role": "system", "content": sys_prompt}, *cache_msgs]
 
