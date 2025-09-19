@@ -7,9 +7,12 @@ Memo table (dict) keyed by Discord message id (formatted payload)
     - msg_id -> {"author", "fragments"}
     - ``fragments`` holds :class:`Fragment` objects which are serialized on
       demand for downstream consumers.
+
+Channel index (dict) for O(1) membership checks
+    - channel_id -> set(message_id)
 """
 
-from typing import Any, Iterable, List, Literal, Tuple
+from typing import Literal
 from collections import deque
 from discord import (
     Attachment,
@@ -49,11 +52,59 @@ class GLCache:
             cls._instance = super().__new__(cls)
             cls._instance._caches = {}
             cls._instance._memo = {}
+            cls._instance._index = {}
         return cls._instance
 
     # ------------------------------------------------------------------ #
     # WRITE helpers
     # ------------------------------------------------------------------ #
+
+    def _get_channel_cache(self, channel_id: int) -> deque[Message]:
+        """Return the deque for ``channel_id`` and refresh the membership index."""
+
+        try:
+            cache = self._caches[channel_id]
+        except KeyError as exc:
+            raise KeyError(
+                f"Channel ID {channel_id} is not configured for caching."
+            ) from exc
+
+        ids = self._index.get(channel_id)
+        if (
+            ids is None
+            or len(ids) != len(cache)
+            or any(m.id not in ids for m in cache)
+        ):
+            self._index[channel_id] = {m.id for m in cache}
+        return cache
+
+    def _get_memo_entry(self, channel_id: int, message_id: int) -> dict:
+        """Return memoized message data after confirming channel membership."""
+
+        self._get_channel_cache(channel_id)
+        index = self._index[channel_id]
+        if message_id not in index:
+            raise KeyError(
+                f"Message ID {message_id} is not cached for channel {channel_id}."
+            )
+
+        cache_msg = self._memo.get(message_id)
+        if cache_msg is None:
+            raise KeyError(
+                f"Message ID {message_id} does not have a memoized record."
+            )
+        return cache_msg
+
+    @staticmethod
+    def _memo_snapshot(cache_msg: dict | None) -> dict:
+        """Return a shallow copy of ``cache_msg`` suitable for callers."""
+
+        if cache_msg is None:
+            return {"author": None, "fragments": []}
+        return {
+            "author": cache_msg.get("author"),
+            "fragments": list(cache_msg.get("fragments", [])),
+        }
 
     async def add_message(
         self,
@@ -73,10 +124,10 @@ class GLCache:
             If provided, ``format_message`` will not be called.
         :returns: ``None``.
         """
-        if channel_id not in self._caches:
-            raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
+        cache = self._get_channel_cache(channel_id)
+        index = self._index[channel_id]
 
-        cache = self._caches[channel_id]
+        msg_id = message_obj.id
 
         # Preemptively check if we're about to evict a message from the cache
         evicted = None
@@ -84,13 +135,14 @@ class GLCache:
             evicted = cache[0].id  # Leftmost = oldest = next to be evicted
 
         cache.append(message_obj)
+        index.add(msg_id)
 
         # Memo cleanup evicted message
         if evicted is not None:
             self._memo.pop(evicted, None)
+            index.discard(evicted)
 
         # Enumerate resource availability to cleanly route message ingestion
-        msg_id = message_obj.id
         resources = {
             "memo": msg_id in self._memo,
             "sqlite": False,
@@ -192,9 +244,7 @@ class GLCache:
         :param n: Optional limit. ``None`` or ≥ cache length returns all.
         :returns: Messages ordered oldest -> newest.
         """
-        if channel_id not in self._caches:
-            raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
-        dq = self._caches[channel_id]
+        dq = self._get_channel_cache(channel_id)
         if n is None:
             return list(dq)  # oldest -> newest
         if n < 0:
@@ -203,121 +253,94 @@ class GLCache:
             return list(dq)
         return list(dq)[len(dq) - n :]  # tail, still oldest -> newest
 
-    def get_raw_messages(self, channel_id: int) -> List[Message]:
+    def list_raw_messages(self, channel_id: int) -> list[Message]:
         """
-        Return raw :class:`discord.Message` objects.
+        Return cached :class:`discord.Message` objects for ``channel_id``.
 
-        :param channel_id: Discord channel id.
-        :returns: Messages ordered oldest -> newest.
+        Messages are ordered oldest -> newest so callers can safely append new
+        entries while iterating.
+
+        :param channel_id: Discord channel id tied to the cache.
+        :returns: List of raw Discord messages.
+        :raises KeyError: If ``channel_id`` is not configured for caching.
         """
-        if channel_id not in self._caches:
-            raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
-        return list(self._caches[channel_id])
 
-    def get_serialized_messages(self, channel_id: int, mode: Mode, n: int | None = None) -> list[dict]:
+        return self._iter_msgs(channel_id)
+
+    def list_formatted_messages(
+        self, channel_id: int, mode: Mode, n: int | None = None
+    ) -> list[dict]:
         """
-        Retrieve up to ``n`` most recent cached messages serialized for the requested mode.
+        Return up to ``n`` memoized messages serialized for ``mode``.
 
-        Notes
-        - ``mode`` controls the shape: ``"llm"`` yields a prompt-ready subset; ``"full"`` returns all memo fields.
-        - Order is chronological (oldest -> newest) among the selected messages.
+        ``mode`` accepts ``"llm"`` for prompt-friendly fragments or ``"full"``
+        for complete memo payloads.
 
-        :param channel_id: Discord channel id.
-        :param mode: Serialization mode to use (e.g., ``"llm"`` or ``"full"``).
-        :param n: Optional limit of the most recent messages to include. ``None`` returns all cached messages.
-        :returns: List of serialized message dicts for up to ``n`` messages ordered oldest -> newest.
+        :param channel_id: Discord channel id tied to the cache.
+        :param mode: Serialization target, ``"llm"`` or ``"full"``.
+        :param n: Optional limit on the number of messages returned.
+        :returns: List of serialized memo dictionaries ordered oldest -> newest.
+        :raises KeyError: If ``channel_id`` is not configured for caching.
+        :raises ValueError: If ``n`` is negative.
         """
+
         return [
             self._serialize(self._memo[m.id], mode)
             for m in self._iter_msgs(channel_id, n)
         ]
 
-    def get_unserialized_messages(self, channel_id: int, n: int | None = None) -> list[dict]:
+    def list_memo_records(
+        self, channel_id: int, n: int | None = None
+    ) -> list[dict]:
         """
-        Retrieve up to ``n`` most recent cached messages in raw memo form.
+        Return memo snapshots (author + fragments) for up to ``n`` messages.
 
-        Notes
-        - Provides a thin bridge to the memo table for consumers that need raw fragments.
-        - Each entry is a shallow copy of the memo record containing ``author`` and ``fragments``.
-        - ``fragments`` holds :class:`gregg_limper.formatter.model.Fragment` instances; treat them as read-only unless deep-copied.
-        - Order is chronological (oldest -> newest) among the selected messages.
+        Each entry is a shallow copy of the memo dictionary. Fragments remain
+        the original :class:`gregg_limper.formatter.model.Fragment` objects so
+        callers should treat them as immutable.
 
-        :param channel_id: Discord channel id.
-        :param n: Optional limit of the most recent messages to include. ``None`` returns all cached messages.
-        :returns: List of memo dicts for up to ``n`` messages ordered oldest -> newest.
+        :param channel_id: Discord channel id tied to the cache.
+        :param n: Optional limit on the number of messages returned.
+        :returns: List of memo dictionaries ordered oldest -> newest.
+        :raises KeyError: If ``channel_id`` is not configured for caching.
+        :raises ValueError: If ``n`` is negative.
         """
-        if channel_id not in self._caches:
-            raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
 
-        out: list[dict] = []
-        for m in self._iter_msgs(channel_id, n):
-            rec = self._memo.get(m.id, {"author": None, "fragments": []})
-            out.append({
-                "author": rec.get("author"),
-                "fragments": list(rec.get("fragments", [])),  # shallow copy list
-            })
-        return out
+        return [
+            self._memo_snapshot(self._memo.get(m.id))
+            for m in self._iter_msgs(channel_id, n)
+        ]
 
-    def get_serialized_message_by_id(self, channel_id: int, message_id: int, mode: Mode) -> dict:
+    def get_formatted_message(
+        self, channel_id: int, message_id: int, mode: Mode
+    ) -> dict:
         """
-        Retrieve a cached message by id serialized for the requested mode.
+        Return a single memoized message serialized for ``mode``.
 
-        Notes
-        - Raises ``KeyError`` if the channel is unknown or the message is not cached.
-        - Each result is produced via ``_serialize`` for the requested ``mode``.
-
-        :param channel_id: Discord channel id.
-        :param message_id: Discord message id.
-        :param mode: Serialization mode to use (e.g., ``"llm"`` or ``"full"``).
-        :returns: Serialized representation of the cached message.
+        :param channel_id: Discord channel id tied to the cache.
+        :param message_id: Discord message id to retrieve.
+        :param mode: Serialization target, ``"llm"`` or ``"full"``.
+        :returns: Serialized memo dictionary for the requested message.
+        :raises KeyError: If the channel is unknown or the message is not
+            memoized for that channel.
         """
-        if channel_id not in self._caches:
-            raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
 
-        if not any(m.id == message_id for m in self._caches[channel_id]):
-            raise KeyError(
-                f"Message ID {message_id} is not cached for channel {channel_id}."
-            )
-
-        cache_msg = self._memo.get(message_id)
-        if cache_msg is None:
-            raise KeyError(
-                f"Message ID {message_id} does not have a memoized record."
-            )
-
+        cache_msg = self._get_memo_entry(channel_id, message_id)
         return self._serialize(cache_msg, mode)
 
-    def get_unserialized_message_by_id(self, channel_id: int, message_id: int) -> dict:
+    def get_memo_record(self, channel_id: int, message_id: int) -> dict:
         """
-        Retrieve a cached message by id in raw memo form.
+        Return a shallow copy of the memo entry for ``message_id``.
 
-        Notes
-        - Raises ``KeyError`` if the channel is unknown or the message is not cached.
-        - Provides a shallow copy of the memo entry with fragments preserved by reference.
-        - ``fragments`` holds :class:`gregg_limper.formatter.model.Fragment` instances; treat them as read-only unless deep-copied.
-
-        :param channel_id: Discord channel id.
-        :param message_id: Discord message id.
-        :returns: Memo dict for the cached message.
+        :param channel_id: Discord channel id tied to the cache.
+        :param message_id: Discord message id to retrieve.
+        :returns: Memo dictionary containing author and fragments.
+        :raises KeyError: If the channel is unknown or the message is not
+            memoized for that channel.
         """
-        if channel_id not in self._caches:
-            raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
 
-        if not any(m.id == message_id for m in self._caches[channel_id]):
-            raise KeyError(
-                f"Message ID {message_id} is not cached for channel {channel_id}."
-            )
-
-        rec = self._memo.get(message_id)
-        if rec is None:
-            raise KeyError(
-                f"Message ID {message_id} does not have a memoized record."
-            )
-
-        return {
-            "author": rec.get("author"),
-            "fragments": list(rec.get("fragments", [])),
-        }
+        cache_msg = self._get_memo_entry(channel_id, message_id)
+        return self._memo_snapshot(cache_msg)
 
     # ------------------------------------------------------------------ #
     # INITIALIZATION
@@ -344,6 +367,7 @@ class GLCache:
         # Initialize empty data structures
         self._caches = {cid: deque(maxlen=cache.CACHE_LENGTH) for cid in channel_ids}
         self._memo = {}  # Clear to be safe -- this is a fresh start either way
+        self._index = {cid: set() for cid in channel_ids}
 
         # Populate caches with recent messages (UP TO cache.CACHE_LENGTH)
         for cid in channel_ids:
@@ -509,12 +533,12 @@ class GLCache:
         :param channel_id: Discord channel id.
         :returns: ``None``.
         """
-        if channel_id not in self._caches:
-            raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
+        cache = self._get_channel_cache(channel_id)
 
-        for msg in self._caches[channel_id]:
+        for msg in cache:
             self._memo.pop(msg.id, None)  # safe even if already removed
-        self._caches[channel_id].clear()
+        cache.clear()
+        self._index[channel_id] = set()
 
 
 

@@ -30,6 +30,7 @@ def test_cache_ingestion_gate(monkeypatch):
     gc = GLCache()
     gc._caches = {1: deque(maxlen=cache_cfg.CACHE_LENGTH)}
     gc._memo = {}
+    gc._index = {}
 
     msg = SimpleNamespace(
         id=1,

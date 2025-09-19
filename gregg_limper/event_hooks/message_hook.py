@@ -41,7 +41,7 @@ async def handle(client: discord.Client, message: discord.Message):
 
 
     # DEBUGGING
-    recent_messages = cache.get_serialized_messages(message.channel.id, "llm", n=5)
+    recent_messages = cache.list_formatted_messages(message.channel.id, "llm", n=5)
     for m in recent_messages:
         m_str = json.dumps(m, ensure_ascii=False, separators=(",", ": "))
         logger.info(

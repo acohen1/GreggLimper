@@ -78,6 +78,7 @@ def test_initialize_hydrates_recent_history(monkeypatch):
     cache_inst = GLCache()
     cache_inst._caches = {}
     cache_inst._memo = {}
+    cache_inst._index = {}
 
     asyncio.run(cache_inst.initialize(client, [1]))
 
@@ -126,6 +127,7 @@ def test_initialize_preserves_order_with_slow_formatter(monkeypatch):
     cache_inst = GLCache()
     cache_inst._caches = {}
     cache_inst._memo = {}
+    cache_inst._index = {}
 
     asyncio.run(cache_inst.initialize(client, [1]))
 
@@ -184,6 +186,7 @@ def test_initialize_formats_only_missing_payloads(monkeypatch):
     cache_inst = GLCache()
     cache_inst._caches = {}
     cache_inst._memo = {}
+    cache_inst._index = {}
 
     asyncio.run(cache_inst.initialize(client, [1]))
 
