@@ -6,7 +6,7 @@ TextHandler Pipeline
       ``TextFragment(description="<normalized text>")``
 
 The handler normalizes mention tokens into display names and skips
-fragments that consist only of a bot ping. Bare URLs have already been
+fragments that consist only of a bot ping or command. Bare URLs have already been
 removed by the classifier, so a remaining mention without additional text
 is treated as noise.
 """
@@ -18,7 +18,6 @@ from typing import List, Set
 from discord import Message
 from . import register
 from ..model import TextFragment
-from ...commands.handlers import all_commands  # explicit top-level import
 
 # First slash-style command regex (anywhere in the text)
 _COMMAND_RE = re.compile(r"/(\w+)(?:\s+(.*))?")
@@ -64,6 +63,7 @@ class TextHandler:
         # 3) Registry-backed slash-command detection (regex search anywhere)
         match = _COMMAND_RE.search(content)
         if match:
+            from ...commands.handlers import all_commands  # Lazy import to avoid cycle
             candidate = (match.group(1) or "").lower()  # command name without '/'
             registry = {name.lstrip("/").lower() for name in all_commands().keys()}
             if candidate in registry:
