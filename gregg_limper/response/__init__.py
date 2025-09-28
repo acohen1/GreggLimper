@@ -27,6 +27,12 @@ async def handle(message: discord.Message) -> str:
 
     cache_msgs = await build_history(message.channel.id, core.CONTEXT_LENGTH)
 
+    # Log history to file for debugging
+    with open("debug_history.md", "w", encoding="utf-8") as f:
+        for msg in cache_msgs:
+            f.write(f"{msg['role']}: {msg['content']}\n\n")
+        logger.debug(f"History written to debug_history.md")
+
     # Generate the system prompt (RAG fetches inside)
     sys_prompt = await build_sys_prompt(message)
 
