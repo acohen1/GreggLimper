@@ -24,7 +24,7 @@ from gregg_limper.config import cache
 
 from gregg_limper import commands
 
-from . import formatting, ingestion
+from .core import process_message_for_rag
 from .channel_state import ChannelCacheState
 from .initializer import CacheInitializer
 from .memo_store import MemoStore
@@ -109,27 +109,14 @@ class GLCache:
             )
             return
 
-        # Evaluate ingestion ahead of formatting so downstream checks can reuse old memos.
-        should_ingest, resources = await ingestion.evaluate_ingestion(
+        record, _ = await process_message_for_rag(
             message_obj,
-            ingest_requested=ingest,
-            memo_present=memo_present,
+            channel_id,
+            ingest=ingest,
+            cache_msg=cache_msg,
+            memo=self._memo_store,
             bot_user=bot_user,
         )
-
-        if cache_msg is not None:
-            record = cache_msg
-            self._memo_store.set(msg_id, cache_msg)
-        elif memo_present:
-            record = self._memo_store.get(msg_id)
-        else:
-            # Formatter runs only when this message lacks memoized fragments.
-            record = await formatting.format_for_cache(message_obj)
-            self._memo_store.set(msg_id, record)
-
-        if should_ingest and not resources.sqlite:
-            # Only push to RAG if storage confirmed the message is missing.
-            await ingestion.ingest_message(channel_id, message_obj, record)
 
         if not memo_present or evicted_id is not None or cache_msg is not None:
             # Persist the latest retention window whenever memo membership changes.

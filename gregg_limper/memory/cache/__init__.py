@@ -36,5 +36,6 @@ Modules
 """
 
 from .manager import GLCache
+from .core import process_message_for_rag
 
-__all__ = ["GLCache"]
+__all__ = ["GLCache", "process_message_for_rag"]

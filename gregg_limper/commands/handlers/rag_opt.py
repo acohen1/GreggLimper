@@ -7,8 +7,7 @@ import logging
 import discord
 
 from . import register
-from ...formatter import format_message
-from ...memory import rag
+from ...memory.cache.core import process_message_for_rag
 from ...memory.rag import consent, purge_user
 from gregg_limper.config import rag as rag_cfg
 from gregg_limper.config import core as core_cfg
@@ -42,56 +41,22 @@ async def _backfill_user_messages(
         else []
     )
 
-    # Parallelize *formatting* with a bounded semaphore
+    # Bound concurrent formatting + ingestion so opt-in backfill remains cooperative
     sem = asyncio.Semaphore(rag_cfg.BACKFILL_CONCURRENCY)
-    tasks: list[asyncio.Task[tuple[discord.Message, int, dict | None]]] = []
+    tasks: list[asyncio.Task[bool]] = []
 
-    async def _format_bounded(
-        msg: discord.Message, channel_id: int
-    ) -> tuple[discord.Message, int, dict | None]:
-        """Format one message while respecting concurrency limits."""
+    async def _process_bounded(msg: discord.Message, channel_id: int) -> bool:
+        """Format and ingest one message while respecting concurrency limits."""
         async with sem:
-            try:
-                cache_msg = await format_message(msg)
-            except Exception:
-                logger.exception("Failed to format message %s during backfill", msg.id)
-                cache_msg = None
-        return msg, channel_id, cache_msg
-
-    # Ingest semaphore and task list prepared after formatting completes
-    ingest_sem = asyncio.Semaphore(rag_cfg.BACKFILL_CONCURRENCY)
-
-    def _should_skip(msg: discord.Message) -> bool:
-        """Determine if a message should be skipped from backfill (commands, feedback, etc.)."""
-        from ... import commands as command_utils
-
-        return command_utils.is_command_message(
-            msg, bot_user=bot_user
-        ) or command_utils.is_command_feedback(msg, bot_user=bot_user)
-
-    async def _ingest_bounded(
-        msg: discord.Message, channel_id: int, cache_msg: dict
-    ) -> bool:
-        """Ingest one message while respecting concurrency limits."""
-        async with ingest_sem:
-            try:
-                if _should_skip(msg):
-                    return False
-                created_at = msg.created_at
-                if created_at.tzinfo is None:
-                    created_at = created_at.replace(tzinfo=datetime.timezone.utc)
-                await rag.ingest_cache_message(
-                    server_id=msg.guild.id if msg.guild else 0,
-                    channel_id=channel_id,
-                    message_id=msg.id,
-                    author_id=msg.author.id,
-                    ts=created_at.timestamp(),
-                    cache_message=cache_msg,
-                )
-                return True
-            except Exception:
-                logger.exception("Failed to ingest message %s during backfill", msg.id)
-                return False
+            _, did_ingest = await process_message_for_rag(
+                msg,
+                channel_id,
+                ingest=True,
+                cache_msg=None,
+                memo={},
+                bot_user=bot_user,
+            )
+            return did_ingest
 
     # Enumerate candidate messages (opted-in user only, within lookback)
     for channel in channels:
@@ -99,30 +64,12 @@ async def _backfill_user_messages(
             async for msg in channel.history(limit=None, after=cutoff, oldest_first=True):
                 if msg.author.id != user.id:
                     continue
-                if _should_skip(msg):
-                    continue
-                # Skip if any fragment already exists for this message_id (idempotent)
-                if await rag.message_exists(msg.id):
-                    continue
-                tasks.append(asyncio.create_task(_format_bounded(msg, channel.id)))
+                tasks.append(asyncio.create_task(_process_bounded(msg, channel.id)))
         except Exception:
             logger.exception("Failed to iterate channel %s during backfill", channel.id)
 
-    # Consume formatter results, scheduling ingestion immediately
-    ingest_tasks: list[asyncio.Task[bool]] = []
     if tasks:
         for coro in asyncio.as_completed(tasks):
-            msg, channel_id, cache_msg = await coro
-            if cache_msg is not None:
-                ingest_tasks.append(
-                    asyncio.create_task(
-                        _ingest_bounded(msg, channel_id, cache_msg)
-                    )
-                )
-
-    # Process ingests as they complete to track progress accurately
-    if ingest_tasks:
-        for coro in asyncio.as_completed(ingest_tasks):
             if await coro:
                 processed += 1
 
