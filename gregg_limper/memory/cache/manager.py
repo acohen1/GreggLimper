@@ -124,8 +124,6 @@ class GLCache:
             record = await formatting.format_for_cache(message_obj)
             self._memo_store.set(msg_id, record)
 
-        logger.info(f"Message {msg_id} cached successfully.")
-
         if should_ingest and not resources.sqlite:
             # Only push to RAG if storage confirmed the message is missing.
             await ingestion.ingest_message(channel_id, message_obj, record)
