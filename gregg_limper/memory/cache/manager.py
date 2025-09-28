@@ -200,7 +200,26 @@ class GLCache:
         """
         state = self._get_state(channel_id)
         messages = state.iter_messages(n)
-        return [serialize(self._memo_store.get(msg.id), mode) for msg in messages]
+        formatted: list[dict] = []
+        missing: list[int] = []
+
+        for msg in messages:
+            try:
+                memo_entry = self._memo_store.get(msg.id)
+            except KeyError:
+                missing.append(msg.id)
+                continue
+            formatted.append(serialize(memo_entry, mode))
+
+        if missing:
+            logger.debug(
+                "Skipped %s uncached messages for channel %s: %s",
+                len(missing),
+                channel_id,
+                missing,
+            )
+
+        return formatted
 
     def list_memo_records(
         self, channel_id: int, n: int | None = None
@@ -218,7 +237,26 @@ class GLCache:
         """
         state = self._get_state(channel_id)
         messages = state.iter_messages(n)
-        return [copy_memo_entry(self._memo_store.get(msg.id)) for msg in messages]
+        copies: list[dict] = []
+        missing: list[int] = []
+
+        for msg in messages:
+            try:
+                memo_entry = self._memo_store.get(msg.id)
+            except KeyError:
+                missing.append(msg.id)
+                continue
+            copies.append(copy_memo_entry(memo_entry))
+
+        if missing:
+            logger.debug(
+                "Skipped %s uncached messages for channel %s when copying memos: %s",
+                len(missing),
+                channel_id,
+                missing,
+            )
+
+        return copies
 
     def get_formatted_message(
         self, channel_id: int, message_id: int, mode: Mode
