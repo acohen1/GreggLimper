@@ -1,12 +1,13 @@
 """
-RAG ingestion orchestration for cached messages.
+Bridge cached memos into long-term RAG stores.
 
 The cache defers to this module for deciding if messages should be pushed into
-downstream retrieval stores and for performing the ingestion. External callers
-should use :func:`evaluate_ingestion` to combine user consent checks with
-duplicate detection and then invoke :func:`ingest_message` to persist the memo
-payload. Both functions are resilient to downstream errors and log failures
-without raising so the cache can continue operating.
+downstream retrieval stores (SQLite + vector indices) and for performing the
+ingestion. External callers should use :func:`evaluate_ingestion` to combine
+user consent checks with duplicate detection and then invoke
+:func:`ingest_message` to persist the memo payload. Both functions are resilient
+to downstream errors and log failures without raising so the cache can continue
+operating.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ResourceState:
-    """Represents availability of memo and downstream persistence resources."""
+    """Represents cache memo availability and downstream RAG readiness."""
 
     memo: bool
     sqlite: bool = False
@@ -40,7 +41,7 @@ async def evaluate_ingestion(
     memo_present: bool,
     bot_user: User | None = None,
 ) -> tuple[bool, ResourceState]:
-    """Evaluate whether ``message`` should be ingested into RAG."""
+    """Evaluate whether ``message`` should be ingested into the RAG stores."""
 
     resources = ResourceState(memo=memo_present)
     if not ingest_requested:
@@ -68,7 +69,7 @@ async def evaluate_ingestion(
 
 
 async def ingest_message(channel_id: int, message: Message, cache_message: dict) -> None:
-    """Persist ``message`` and its memoized payload into RAG stores."""
+    """Persist ``message`` and its memoized payload into the RAG stores."""
 
     try:
         created_at = message.created_at

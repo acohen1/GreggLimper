@@ -25,7 +25,8 @@ Modules
     fragments for LLM or full fidelity consumption.
 ``ingestion``
     Implements the consent checks and persistence hooks that push memoized
-    messages into downstream RAG stores when requested.
+    messages into the long-term RAG stores (SQL database + vector index) when
+    requested.
 ``initializer``
     Drives Discord history hydration on startup, seeding channel caches and
     backfilling memo snapshots.

@@ -77,7 +77,7 @@ class CacheInitializer:
                 messages, self._memo_store.has, cache.INIT_CONCURRENCY
             )
             
-            # Limit concurrent ingestion during startup to avoid spiking downstream services.
+            # Limit concurrent ingestion during startup to avoid spiking downstream RAG stores.
             ingest_sem = asyncio.Semaphore(cache.INGEST_CONCURRENCY)
             ingest_tasks: list[asyncio.Task[None]] = []
             
@@ -102,7 +102,7 @@ class CacheInitializer:
                     memo_present=True,
                     bot_user=bot_user,
                 )
-                # After caching succeeds, decide whether to backfill ingestion for the message.
+                # After caching succeeds, decide whether to backfill the RAG stores for the message.
                 if should_ingest and not resources.sqlite:
                     ingest_tasks.append(
                         asyncio.create_task(

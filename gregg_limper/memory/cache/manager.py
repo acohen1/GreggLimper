@@ -103,7 +103,10 @@ class GLCache:
                 self._memo_store.delete(msg_id)
             if evicted_id is not None or memo_present:
                 self._memo_store.save_channel_snapshot(channel_id, state.message_ids())
-            logger.info("Skipped RAG memo/ingest for command message %s", msg_id)
+            logger.info(
+                "Skipped cache memo persistence and RAG ingestion for command message %s",
+                msg_id,
+            )
             return
 
         # Evaluate ingestion ahead of formatting so downstream checks can reuse old memos.
