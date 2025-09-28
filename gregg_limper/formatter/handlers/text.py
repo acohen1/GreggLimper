@@ -12,10 +12,16 @@ is treated as noise.
 """
 
 from __future__ import annotations
-from typing import List
+
+import re
+from typing import List, Set
 from discord import Message
 from . import register
 from ..model import TextFragment
+from ...commands.handlers import all_commands  # explicit top-level import
+
+# First slash-style command regex (anywhere in the text)
+_COMMAND_RE = re.compile(r"/(\w+)(?:\s+(.*))?")
 
 @register
 class TextHandler:
@@ -23,52 +29,45 @@ class TextHandler:
     needs_message = True
 
     @staticmethod
-    async def handle(text: str, message: Message | None = None) -> List[TextFragment]:
+    async def handle(text: str, message: Message) -> List[TextFragment]:
         """
-        Wrap non-empty message text in a :class:`TextFragment`.
+        Wrap non-empty message text in a :class:`TextFragment` after:
+          - dropping pure bot pings
+          - normalizing user mentions to display names,
+          - dropping only if a slash command present in the message matches the registry.
+        """
+        if not message or not message.guild or not message.guild.me:
+            raise ValueError("TextHandler expects a guild message with a bot user.")
 
-        :param text: Raw message content.
-        :param message: Source Discord message containing metadata for mention handling.
-        :returns: List containing a single fragment or empty list.
-        """
-        if message is None:
-            raise ValueError("TextHandler requires the source Discord message")
-        stripped = text.strip()
-        if not stripped:
+        # Original text for token-based checks
+        original = (text or "").strip()
+        if not original:
             return []
 
-        content = stripped
-        mention_display_map: dict[str, str] = {}
+        bot = message.guild.me
+        bot_id_tokens: Set[str] = {f"<@{bot.id}>", f"<@!{bot.id}>"}
 
+        # 1) Pure-ping check on the *original* content (before normalization)
+        if original in bot_id_tokens:
+            return []
+
+        # 2) Normalize user mentions (including the bot's) to display names
+        content = original
         for user in message.mentions:
-            tokens = (f"<@{user.id}>", f"<@!{user.id}>")
-            for token in tokens:
-                mention_display_map[token] = user.display_name
-
-        for token, display_name in mention_display_map.items():
-            content = content.replace(token, display_name)
-
+            name = user.display_name
+            content = content.replace(f"<@{user.id}>", name)
+            content = content.replace(f"<@!{user.id}>", name)
         content = content.strip()
-
-        bot_user = None
-        if getattr(message, "guild", None):
-            bot_user = getattr(message.guild, "me", None)
-        if not bot_user and getattr(message, "channel", None):
-            bot_user = getattr(message.channel, "me", None)
-        if not bot_user and hasattr(message, "_state"):
-            bot_user = getattr(message._state, "user", None)
-
-        if bot_user:
-            bot_tokens = {f"<@{bot_user.id}>", f"<@!{bot_user.id}>"}
-            if stripped in bot_tokens:
+        if not content:
+            return []
+        
+        # 3) Registry-backed slash-command detection (regex search anywhere)
+        match = _COMMAND_RE.search(content)
+        if match:
+            candidate = (match.group(1) or "").lower()  # command name without '/'
+            registry = {name.lstrip("/").lower() for name in all_commands().keys()}
+            if candidate in registry:
                 return []
 
-            display_name = getattr(bot_user, "display_name", None) or getattr(bot_user, "name", None)
-            username = getattr(bot_user, "name", None)
-            bot_names = {name.strip() for name in (display_name, username) if name}
-            bot_names.update({f"@{name}" for name in list(bot_names)})
-            if content in bot_names:
-                return []
-
-        return [TextFragment(description=content)] if content else []
-
+        # 4) Emit normalized fragment
+        return [TextFragment(description=content)]
