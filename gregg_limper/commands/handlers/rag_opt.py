@@ -33,6 +33,7 @@ async def _backfill_user_messages(
     )
 
     processed = 0
+    bot_user = getattr(guild, "me", None) if guild else None
 
     # Only process channels allowed by the config
     channels = (
@@ -60,12 +61,22 @@ async def _backfill_user_messages(
     # Ingest semaphore and task list prepared after formatting completes
     ingest_sem = asyncio.Semaphore(rag_cfg.BACKFILL_CONCURRENCY)
 
+    def _should_skip(msg: discord.Message) -> bool:
+        """Determine if a message should be skipped from backfill (commands, feedback, etc.)."""
+        from ... import commands as command_utils
+
+        return command_utils.is_command_message(
+            msg, bot_user=bot_user
+        ) or command_utils.is_command_feedback(msg, bot_user=bot_user)
+
     async def _ingest_bounded(
         msg: discord.Message, channel_id: int, cache_msg: dict
     ) -> bool:
         """Ingest one message while respecting concurrency limits."""
         async with ingest_sem:
             try:
+                if _should_skip(msg):
+                    return False
                 created_at = msg.created_at
                 if created_at.tzinfo is None:
                     created_at = created_at.replace(tzinfo=datetime.timezone.utc)
@@ -87,6 +98,8 @@ async def _backfill_user_messages(
         try:
             async for msg in channel.history(limit=None, after=cutoff, oldest_first=True):
                 if msg.author.id != user.id:
+                    continue
+                if _should_skip(msg):
                     continue
                 # Skip if any fragment already exists for this message_id (idempotent)
                 if await rag.message_exists(msg.id):

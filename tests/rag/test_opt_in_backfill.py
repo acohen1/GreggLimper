@@ -121,3 +121,73 @@ def test_backfill(monkeypatch):
     assert cmd_channel.sent[0] == "Opted in to RAG. Backfill queued."
     assert cmd_channel.sent[-1].startswith("Backfill complete")
 
+
+def test_backfill_skips_command_messages(monkeypatch):
+    user = SimpleNamespace(id=1, display_name="u")
+    bot_user = SimpleNamespace(id=50, bot=True)
+    monkeypatch.setattr(core_cfg, "CHANNEL_IDS", [1])
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    guild = SimpleNamespace(id=10, text_channels=[], me=bot_user)
+
+    command_history_msg = FakeMessage(
+        id=201,
+        author=user,
+        guild=guild,
+        created_at=now - datetime.timedelta(hours=1),
+        content="/rag_opt_in",
+        mentions=[bot_user],
+    )
+
+    ch1 = FakeChannel(1, guild, [command_history_msg])
+    command_history_msg.channel = ch1
+    guild.text_channels = [ch1]
+
+    cmd_channel = FakeChannel(99, guild)
+    cmd_msg = FakeMessage(
+        id=999,
+        author=user,
+        guild=guild,
+        channel=cmd_channel,
+        mentions=[bot_user],
+        content="/rag_opt_in",
+    )
+
+    async def fake_add_user(uid):
+        return True
+
+    async def fake_message_exists(mid):
+        return False
+
+    ingested = []
+
+    async def fake_ingest_cache_message(**kwargs):
+        ingested.append(kwargs["message_id"])
+
+    format_calls = []
+
+    async def fake_format_message(msg):
+        format_calls.append(msg.id)
+        return {"author": msg.author.display_name, "fragments": []}
+
+    monkeypatch.setattr(
+        "gregg_limper.memory.rag.consent.add_user", fake_add_user
+    )
+    monkeypatch.setattr(
+        "gregg_limper.memory.rag.message_exists", fake_message_exists
+    )
+    monkeypatch.setattr(
+        "gregg_limper.memory.rag.ingest_cache_message", fake_ingest_cache_message
+    )
+    monkeypatch.setattr(
+        "gregg_limper.commands.handlers.rag_opt.format_message", fake_format_message
+    )
+
+    run(RagOptInCommand.handle(None, cmd_msg, ""))
+
+    assert ingested == []
+    assert format_calls == []
+    assert cmd_channel.sent[0] == "Opted in to RAG. Backfill queued."
+    assert cmd_channel.sent[-1].startswith("Backfill complete")
+
