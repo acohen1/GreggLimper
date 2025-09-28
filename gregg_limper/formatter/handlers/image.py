@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import List
 import aiohttp, asyncio
 from discord import Attachment
+from discord import Message
 from . import register
 from ...config import core
 from ...clients.oai import describe_image_bytes
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 @register
 class ImageHandler:
     media_type = "image"
+    needs_message = False
 
     @staticmethod
     async def _fetch_bytes(url: str, max_mb: int) -> bytes:
@@ -38,7 +40,9 @@ class ImageHandler:
             return data
 
     @staticmethod
-    async def handle(images: list[Attachment]) -> list[ImageFragment]:
+    async def handle(
+        images: list[Attachment], message: Message | None = None
+    ) -> list[ImageFragment]:
         """
         Process image attachments into :class:`ImageFragment` objects.
 

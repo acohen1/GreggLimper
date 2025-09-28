@@ -158,7 +158,7 @@ class YouTubeFragment(Fragment):
         return base
     
     def content_text(self) -> str:
-        return (self.title or "").strip()
+        return (self.title or self.description or "").strip()
 
 @dataclass(slots=True)
 class LinkFragment(Fragment):

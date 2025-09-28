@@ -8,6 +8,7 @@ Any file inside ``formatter/handlers/`` that defines::
     @register
     class MyHandler:
         media_type = "video"
+        needs_message = False  # set to True to receive the Discord message
         @staticmethod
         async def handle(slice_data): ...
 
@@ -28,7 +29,8 @@ Adding a new handler requires changes across the app:
 """
 
 from __future__ import annotations
-from typing import Protocol, Dict, Any
+from typing import Protocol, Dict, Any, ClassVar
+from discord import Message
 from importlib import import_module
 from pkgutil import iter_modules
 from pathlib import Path
@@ -40,10 +42,11 @@ from ..model import Fragment
 
 
 class SliceHandler(Protocol):
-    media_type: str  # unique key, e.g. "gif"
+    media_type: ClassVar[str]  # unique key, e.g. "gif"
+    needs_message: ClassVar[bool]
 
     @staticmethod
-    async def handle(slice_data) -> list[Fragment]:
+    async def handle(slice_data, message: Message | None = ...) -> list[Fragment]:
         """Coroutine returning ``Fragment`` instances."""
 
 

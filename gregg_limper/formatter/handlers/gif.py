@@ -21,7 +21,7 @@ from io import BytesIO
 from PIL import Image
 import re, logging
 
-from discord import Attachment
+from discord import Message
 from . import register
 from ...clients.oai import describe_image_bytes
 from ..model import GIFFragment
@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 @register
 class GIFHandler:
     media_type = "gif"
+    needs_message = False
 
     # ---------- low‑level helpers ------------------------------------ #
 
@@ -99,7 +100,9 @@ class GIFHandler:
     # ---------- public contract -------------------------------------- #
 
     @staticmethod
-    async def handle(urls: List[str]) -> List[GIFFragment]:
+    async def handle(
+        urls: List[str], message: Message | None = None
+    ) -> List[GIFFragment]:
         """
         Process GIF URLs into :class:`GIFFragment` objects.
 

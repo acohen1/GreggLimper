@@ -23,6 +23,7 @@ import aiohttp
 from ...config import core
 from ...clients.oai import describe_image_bytes
 from ..model import YouTubeFragment
+from discord import Message
 
 import logging
 logger = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 @register
 class YouTubeHandler:
     media_type = "youtube"
+    needs_message = False
 
     # ---------- low‑level helpers ------------------------------------ #
 
@@ -88,7 +90,9 @@ class YouTubeHandler:
     # ---------- public contract -------------------------------------- #
 
     @staticmethod
-    async def handle(urls: List[str]) -> List[YouTubeFragment]:
+    async def handle(
+        urls: List[str], message: Message | None = None
+    ) -> List[YouTubeFragment]:
         """
         Process YouTube URLs into :class:`YouTubeFragment` objects.
 
