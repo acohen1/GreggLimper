@@ -30,6 +30,10 @@ async def handle(client: discord.Client, message: discord.Message):
     # 2) Parse the message for commands (e.g. @bot /lobotomy, /help, etc.)
     if bot_mentioned and await commands.dispatch(client, message):
         return
+    
+    # 3) If not a command, check if the message is a canned bot feedback message
+    if commands.is_command_feedback(message, bot_user=bot_user):
+        return
 
     # 4) Add message to cache
     cache = GLCache()  # Singleton instance
