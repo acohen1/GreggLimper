@@ -16,8 +16,10 @@ import logging
 from dataclasses import dataclass
 
 from discord import Message
+from discord.abc import User
 
 from .. import rag
+from ... import commands
 from ..rag import consent
 
 logger = logging.getLogger(__name__)
@@ -36,11 +38,17 @@ async def evaluate_ingestion(
     message: Message,
     ingest_requested: bool,
     memo_present: bool,
+    bot_user: User | None = None,
 ) -> tuple[bool, ResourceState]:
     """Evaluate whether ``message`` should be ingested into RAG."""
 
     resources = ResourceState(memo=memo_present)
     if not ingest_requested:
+        return False, resources
+
+    if commands.is_command_message(message, bot_user=bot_user) or commands.is_command_feedback(
+        message, bot_user=bot_user
+    ):
         return False, resources
 
     try:

@@ -31,15 +31,12 @@ async def handle(client: discord.Client, message: discord.Message):
     if bot_mentioned and await commands.dispatch(client, message):
         return
     
-    # 3) If not a command, check if the message is a canned bot feedback message
-    if commands.is_command_feedback(message, bot_user=bot_user):
-        return
-
-    # 4) Add message to cache
+    # 3) Add message to cache
+    # NOTE: The add message pipeline automatically handles formatting and ingestion.
+    # It will skip commands and feedback messages.
     cache = GLCache()  # Singleton instance
     try:
-        await cache.add_message(message.channel.id, message)
-        logger.info(f"Message {message.id} cached successfully.")
+        await cache.add_message(message.channel.id, message, bot_user=bot_user)
     except KeyError as e:
         logger.error(f"Failed to cache message {message.id}: {e}")
 
@@ -52,7 +49,7 @@ async def handle(client: discord.Client, message: discord.Message):
             f"Cached message: {m_str[:100]}..."
         )  # Log first 100 chars for brevity
 
-    # 5) Start response pipeline if bot is mentioned
+    # 4) Start response pipeline if bot is mentioned
     if not bot_mentioned:
         return
 

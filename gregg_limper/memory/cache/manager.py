@@ -18,8 +18,11 @@ import logging
 from typing import List
 
 from discord import Client, Message
+from discord.abc import User
 
 from gregg_limper.config import cache
+
+from gregg_limper import commands
 
 from . import formatting, ingestion
 from .channel_state import ChannelCacheState
@@ -59,6 +62,7 @@ class GLCache:
         message_obj: Message,
         ingest: bool = True,
         cache_msg: dict | None = None,
+        bot_user: User | None = None,
     ) -> None:
         """
         Record a message in the cache, persist its memo, and optionally queue ingestion.
@@ -88,9 +92,26 @@ class GLCache:
             # Drop any memo tied to the evicted message to keep disk snapshots aligned.
             self._memo_store.delete(evicted_id)
 
+        bot_user = bot_user or getattr(getattr(message_obj, "guild", None), "me", None)
+
+        skip_rag = commands.is_command_message(
+            message_obj, bot_user=bot_user
+        ) or commands.is_command_feedback(message_obj, bot_user=bot_user)
+
+        if skip_rag:
+            if memo_present:
+                self._memo_store.delete(msg_id)
+            if evicted_id is not None or memo_present:
+                self._memo_store.save_channel_snapshot(channel_id, state.message_ids())
+            logger.info("Skipped RAG memo/ingest for command message %s", msg_id)
+            return
+
         # Evaluate ingestion ahead of formatting so downstream checks can reuse old memos.
         should_ingest, resources = await ingestion.evaluate_ingestion(
-            message_obj, ingest_requested=ingest, memo_present=memo_present
+            message_obj,
+            ingest_requested=ingest,
+            memo_present=memo_present,
+            bot_user=bot_user,
         )
 
         if cache_msg is not None:
@@ -102,6 +123,8 @@ class GLCache:
             # Formatter runs only when this message lacks memoized fragments.
             record = await formatting.format_for_cache(message_obj)
             self._memo_store.set(msg_id, record)
+
+        logger.info(f"Message {msg_id} cached successfully.")
 
         if should_ingest and not resources.sqlite:
             # Only push to RAG if storage confirmed the message is missing.

@@ -86,14 +86,21 @@ class CacheInitializer:
                 try:
                     # Hydration replays history into the cache without triggering ingest twice.
                     await self._cache.add_message(
-                        channel_id, message, ingest=False, cache_msg=payload
+                        channel_id,
+                        message,
+                        ingest=False,
+                        cache_msg=payload,
+                        bot_user=bot_user,
                     )
                 except Exception:
                     logger.exception("Failed to add message %s during init", message.id)
                     continue
 
                 should_ingest, resources = await evaluate_ingestion(
-                    message, ingest_requested=True, memo_present=True
+                    message,
+                    ingest_requested=True,
+                    memo_present=True,
+                    bot_user=bot_user,
                 )
                 # After caching succeeds, decide whether to backfill ingestion for the message.
                 if should_ingest and not resources.sqlite:
