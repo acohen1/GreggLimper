@@ -16,6 +16,7 @@ from typing import List, TYPE_CHECKING
 
 from discord import Client, Message, TextChannel
 
+from gregg_limper import commands
 from gregg_limper.config import cache
 
 from .formatting import format_missing_messages
@@ -54,18 +55,32 @@ class CacheInitializer:
                 message
                 async for message in channel.history(limit=cache.CACHE_LENGTH)
             ]
-            messages: List[Message] = list(reversed(history))
-            # Discord yields newest-first; reverse so append order matches live traffic.
 
+            # Discord yields newest-first; reverse so append order matches live traffic.
+            fetched: List[Message] = list(reversed(history))
+            
+            # Drop command invocations so cache rehydration mirrors live filtering.
+            bot_user = getattr(client, "user", None)
+            messages = [
+                message
+                for message in fetched
+                if not commands.is_command_message(
+                    message, bot_user=bot_user
+                )
+                and not commands.is_command_feedback(
+                    message, bot_user=bot_user
+                )
+            ]
+
+            # Only schedule formatter work for ids missing from the memo store.
             formatted_missing = await format_missing_messages(
                 messages, self._memo_store.has, cache.INIT_CONCURRENCY
             )
-            # Only schedule formatter work for ids missing from the memo store.
-
+            
+            # Limit concurrent ingestion during startup to avoid spiking downstream services.
             ingest_sem = asyncio.Semaphore(cache.INGEST_CONCURRENCY)
             ingest_tasks: list[asyncio.Task[None]] = []
-            # Limit concurrent ingestion during startup to avoid spiking downstream services.
-
+            
             for message in messages:
                 payload = formatted_missing.get(message.id)
                 try:

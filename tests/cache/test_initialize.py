@@ -40,8 +40,9 @@ class FakeChannel:
 
 
 class FakeClient:
-    def __init__(self, channel):
+    def __init__(self, channel, user=None):
         self._channel = channel
+        self.user = user
 
     def get_channel(self, cid):
         assert cid == self._channel.id
@@ -75,6 +76,7 @@ def test_initialize_hydrates_recent_history(monkeypatch):
             created_at=now + datetime.timedelta(seconds=i),
             channel=SimpleNamespace(id=1),
             guild=SimpleNamespace(id=1),
+            content="",
         )
         for i in range(20)
     ]
@@ -125,6 +127,7 @@ def test_initialize_preserves_order_with_slow_formatter(monkeypatch):
             created_at=now + datetime.timedelta(seconds=i),
             channel=SimpleNamespace(id=1),
             guild=SimpleNamespace(id=1),
+            content="",
         )
         for i in range(5)
     ]
@@ -185,6 +188,7 @@ def test_initialize_formats_only_missing_payloads(monkeypatch):
             created_at=now + datetime.timedelta(seconds=i),
             channel=SimpleNamespace(id=1),
             guild=SimpleNamespace(id=1),
+            content="",
         )
         for i in range(1, 4)
     ]
@@ -198,3 +202,65 @@ def test_initialize_formats_only_missing_payloads(monkeypatch):
     asyncio.run(cache_inst.initialize(client, [1]))
 
     assert created == [2, 3]
+
+
+def test_initialize_skips_command_and_feedback(monkeypatch):
+    monkeypatch.setattr(cache_cfg, "CACHE_LENGTH", 10)
+    monkeypatch.setattr(cache_initializer, "TextChannel", FakeChannel)
+
+    async def fake_is_opted_in(uid):
+        return False
+
+    async def fake_format_message(msg):
+        return {"author": msg.author.display_name, "fragments": []}
+
+    monkeypatch.setattr(cache_ingestion.consent, "is_opted_in", fake_is_opted_in)
+    monkeypatch.setattr(
+        cache_formatting, "format_for_cache", fake_format_message
+    )
+    monkeypatch.setattr(cache_memo, "exists", lambda cid: False)
+    monkeypatch.setattr(cache_memo, "load", lambda cid: {})
+    monkeypatch.setattr(cache_memo, "prune", lambda cid, d: d)
+    monkeypatch.setattr(cache_memo, "save", lambda cid, d: None)
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    bot_user = SimpleNamespace(id=99, display_name="gregg", bot=True)
+    user = SimpleNamespace(id=1, display_name="user", bot=False)
+
+    messages = [
+        FakeMessage(
+            id=mid,
+            author=author,
+            created_at=now + datetime.timedelta(seconds=offset),
+            channel=SimpleNamespace(id=1),
+            guild=SimpleNamespace(id=1),
+            content=content,
+            mentions=mentions,
+        )
+        for mid, author, offset, content, mentions in [
+            (1, user, 0, "hello", []),
+            (2, user, 1, "/help", [bot_user]),
+            (
+                3,
+                SimpleNamespace(
+                    id=bot_user.id, display_name="gregg", bot=True
+                ),
+                2,
+                "Available commands: help, lobotomy",
+                [],
+            ),
+            (4, user, 3, "bye", []),
+        ]
+    ]
+
+    channel = FakeChannel(1, messages)
+    client = FakeClient(channel, user=bot_user)
+
+    cache_inst = GLCache()
+    cache_inst._states = {}
+    cache_inst._memo_store = MemoStore()
+
+    asyncio.run(cache_inst.initialize(client, [1]))
+
+    stored_ids = [m.id for m in cache_inst._states[1].messages]
+    assert stored_ids == [1, 4]

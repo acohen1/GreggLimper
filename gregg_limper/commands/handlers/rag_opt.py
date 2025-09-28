@@ -131,6 +131,17 @@ class RagOptInCommand:
     command_str = "rag_opt_in"
 
     @staticmethod
+    def match_feedback(message: discord.Message) -> bool:
+        """Identify canned feedback emitted by the opt-in command."""
+
+        content = (message.content or "").strip()
+        return (
+            content == "Opted in to RAG. Backfill queued."
+            or content == "Already opted in."
+            or content.startswith("Backfill complete.")
+        )
+
+    @staticmethod
     async def handle(
         client: discord.Client, message: discord.Message, args: str
     ) -> None:
@@ -169,6 +180,13 @@ class RagOptOutCommand:
     command_str = "rag_opt_out"
 
     @staticmethod
+    def match_feedback(message: discord.Message) -> bool:
+        """Identify canned feedback emitted by the opt-out command."""
+
+        content = (message.content or "").strip()
+        return content == "Opted out and data purged from RAG."
+
+    @staticmethod
     async def handle(
         client: discord.Client, message: discord.Message, args: str
     ) -> None:
@@ -194,6 +212,13 @@ class RagStatusCommand:
     - Reports whether the caller is currently opted in to RAG ingestion.
     """
     command_str = "rag_status"
+
+    @staticmethod
+    def match_feedback(message: discord.Message) -> bool:
+        """Identify canned feedback emitted by the status command."""
+
+        content = (message.content or "").strip()
+        return content in {"You are opted in.", "You are not opted in."}
 
     @staticmethod
     async def handle(

@@ -24,12 +24,12 @@ async def handle(client: discord.Client, message: discord.Message):
     logger.info(
         f"New message received in channel {message.channel.name} (ID: {message.channel.id})"
     )
-    bot_mentioned = client.user in message.mentions
+    bot_user = client.user
+    bot_mentioned = bot_user in message.mentions if bot_user else False
 
     # 2) Parse the message for commands (e.g. @bot /lobotomy, /help, etc.)
-    if bot_mentioned:
-        if await commands.dispatch(client, message):
-            return
+    if bot_mentioned and await commands.dispatch(client, message):
+        return
 
     # 4) Add message to cache
     cache = GLCache()  # Singleton instance
