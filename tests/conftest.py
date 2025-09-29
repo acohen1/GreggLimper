@@ -1,4 +1,5 @@
 import os, sys
+import warnings
 from pathlib import Path
 import types
 
@@ -15,6 +16,19 @@ os.environ.setdefault("MSG_MODEL_ID", "model")
 os.environ.setdefault("IMG_MODEL_ID", "model")
 os.environ.setdefault("WEB_MODEL_ID", "model")
 os.environ.setdefault("CHANNEL_IDS", "123")
+
+# Silence deprecation warnings surfaced from third-party dependencies during tests
+warnings.filterwarnings(
+    "ignore", category=DeprecationWarning, module=r"^discord\\.player$"
+)
+warnings.filterwarnings("ignore", "'audioop' is deprecated", DeprecationWarning)
+
+
+def pytest_configure(config):
+    warnings.filterwarnings(
+        "ignore", category=DeprecationWarning, module=r"^discord\\.player$"
+    )
+    warnings.filterwarnings("ignore", "'audioop' is deprecated", DeprecationWarning)
 
 # Stub pymilvus to avoid heavy dependency during tests
 pymilvus_stub = types.SimpleNamespace(

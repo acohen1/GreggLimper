@@ -1,6 +1,6 @@
 import asyncio
-from types import SimpleNamespace
 import datetime
+from types import SimpleNamespace
 
 from gregg_limper.memory.rag import consent
 from gregg_limper.memory.rag import consent as consent_mod
@@ -36,7 +36,7 @@ def test_cache_ingestion_gate(monkeypatch):
         id=1,
         author=SimpleNamespace(id=123, display_name="u"),
         guild=SimpleNamespace(id=1),
-        created_at=datetime.datetime.utcfromtimestamp(0),
+        created_at=datetime.datetime.fromtimestamp(0, datetime.UTC),
         content="",
     )
 
@@ -113,7 +113,7 @@ def test_commands_skipped_from_ingest(monkeypatch):
         id=10,
         author=user,
         guild=SimpleNamespace(id=1),
-        created_at=datetime.datetime.utcfromtimestamp(0),
+        created_at=datetime.datetime.fromtimestamp(0, datetime.UTC),
         content="/rag_opt_in",
         mentions=[bot_user],
     )
@@ -132,7 +132,7 @@ def test_commands_skipped_from_ingest(monkeypatch):
         id=11,
         author=bot_user,
         guild=SimpleNamespace(id=1),
-        created_at=datetime.datetime.utcfromtimestamp(0),
+        created_at=datetime.datetime.fromtimestamp(0, datetime.UTC),
         content="Opted in to RAG. Backfill queued.",
         mentions=[],
     )

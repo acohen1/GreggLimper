@@ -88,35 +88,30 @@ def test_backfill(monkeypatch):
     cmd_msg = FakeMessage(id=999, author=user, guild=guild, channel=cmd_channel)
 
     existing = {104}
+    processed = []
     ingested = []
 
     async def fake_add_user(uid):
         return True
 
-    async def fake_message_exists(mid):
-        return mid in existing
-
-    async def fake_ingest_cache_message(**kwargs):
-        ingested.append(kwargs["message_id"])
-
-    async def fake_format_message(msg):
-        return {"author": msg.author.display_name, "fragments": []}
+    async def fake_process_message_for_rag(message, channel_id, **kwargs):
+        processed.append((message.id, channel_id))
+        did_ingest = message.id not in existing
+        if did_ingest:
+            ingested.append(message.id)
+        return {"message_id": message.id}, did_ingest
 
     monkeypatch.setattr(
         "gregg_limper.memory.rag.consent.add_user", fake_add_user
     )
     monkeypatch.setattr(
-        "gregg_limper.memory.rag.message_exists", fake_message_exists
-    )
-    monkeypatch.setattr(
-        "gregg_limper.memory.rag.ingest_cache_message", fake_ingest_cache_message
-    )
-    monkeypatch.setattr(
-        "gregg_limper.commands.handlers.rag_opt.format_message", fake_format_message
+        "gregg_limper.commands.handlers.rag_opt.process_message_for_rag",
+        fake_process_message_for_rag,
     )
 
     run(RagOptInCommand.handle(None, cmd_msg, ""))
 
+    assert processed == [(101, 1), (104, 2)]
     assert ingested == [101]
     assert cmd_channel.sent[0] == "Opted in to RAG. Backfill queued."
     assert cmd_channel.sent[-1].startswith("Backfill complete")
@@ -154,40 +149,26 @@ def test_backfill_skips_command_messages(monkeypatch):
         content="/rag_opt_in",
     )
 
+    processed = []
+
     async def fake_add_user(uid):
         return True
 
-    async def fake_message_exists(mid):
-        return False
-
-    ingested = []
-
-    async def fake_ingest_cache_message(**kwargs):
-        ingested.append(kwargs["message_id"])
-
-    format_calls = []
-
-    async def fake_format_message(msg):
-        format_calls.append(msg.id)
-        return {"author": msg.author.display_name, "fragments": []}
+    async def fake_process_message_for_rag(message, channel_id, **kwargs):
+        processed.append((message.id, channel_id))
+        return {"message_id": message.id}, False
 
     monkeypatch.setattr(
         "gregg_limper.memory.rag.consent.add_user", fake_add_user
     )
     monkeypatch.setattr(
-        "gregg_limper.memory.rag.message_exists", fake_message_exists
-    )
-    monkeypatch.setattr(
-        "gregg_limper.memory.rag.ingest_cache_message", fake_ingest_cache_message
-    )
-    monkeypatch.setattr(
-        "gregg_limper.commands.handlers.rag_opt.format_message", fake_format_message
+        "gregg_limper.commands.handlers.rag_opt.process_message_for_rag",
+        fake_process_message_for_rag,
     )
 
     run(RagOptInCommand.handle(None, cmd_msg, ""))
 
-    assert ingested == []
-    assert format_calls == []
+    assert processed == [(201, 1)]
     assert cmd_channel.sent[0] == "Opted in to RAG. Backfill queued."
     assert cmd_channel.sent[-1].startswith("Backfill complete")
 
