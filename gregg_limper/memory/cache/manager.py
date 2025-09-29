@@ -156,7 +156,7 @@ class GLCache:
             )
         return self._memo_store.get(message_id)
 
-    def list_raw_messages(self, channel_id: int) -> list[Message]:
+    def list_raw_messages(self, channel_id: int, n: int) -> list[Message]:
         """
         Return the raw :class:`discord.Message` objects retained for ``channel_id``.
 
@@ -164,9 +164,10 @@ class GLCache:
         result mirrors what subsequent memo serialization will process.
 
         :param channel_id: Discord channel identifier whose cache should be read.
+        :param n: Maximum number of most recent messages to include (default all).
         :return: Live :class:`discord.Message` instances ordered according to cache retention.
         """
-        return self._get_state(channel_id).iter_messages()
+        return self._get_state(channel_id).iter_messages(n)
 
     def list_formatted_messages(
         self, channel_id: int, mode: Mode, n: int | None = None
