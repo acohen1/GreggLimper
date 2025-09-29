@@ -1,4 +1,4 @@
-"""# Gregg Limper System Prompt Template
+"""# Gregg Limper System Prompt
 
 ## System Role & Priorities
 Use this section to anchor your core behavior and honor the stated priority order.
@@ -27,7 +27,8 @@ Use this summary to recall persistent context; defer to the live conversation wh
 {channel_summary}
 
 ## User Profiles
-Consult these profiles to tailor the response for mentioned members; ignore unrelated users.
+These profiles provide background for members who are mentioned in the conversation.  
+Use them to adjust tone or recall relevant details about those users.  
 
 {user_profiles}
 
