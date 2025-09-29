@@ -7,8 +7,7 @@ import logging
 import discord
 
 from . import register
-from ...formatter import format_message
-from ...memory import rag
+from ...memory.cache.core import process_message_for_rag
 from ...memory.rag import consent, purge_user
 from gregg_limper.config import rag as rag_cfg
 from gregg_limper.config import core as core_cfg
@@ -33,6 +32,7 @@ async def _backfill_user_messages(
     )
 
     processed = 0
+    bot_user = getattr(guild, "me", None) if guild else None
 
     # Only process channels allowed by the config
     channels = (
@@ -41,46 +41,22 @@ async def _backfill_user_messages(
         else []
     )
 
-    # Parallelize *formatting* with a bounded semaphore
+    # Bound concurrent formatting + ingestion so opt-in backfill remains cooperative
     sem = asyncio.Semaphore(rag_cfg.BACKFILL_CONCURRENCY)
-    tasks: list[asyncio.Task[tuple[discord.Message, int, dict | None]]] = []
+    tasks: list[asyncio.Task[bool]] = []
 
-    async def _format_bounded(
-        msg: discord.Message, channel_id: int
-    ) -> tuple[discord.Message, int, dict | None]:
-        """Format one message while respecting concurrency limits."""
+    async def _process_bounded(msg: discord.Message, channel_id: int) -> bool:
+        """Format and ingest one message while respecting concurrency limits."""
         async with sem:
-            try:
-                cache_msg = await format_message(msg)
-            except Exception:
-                logger.exception("Failed to format message %s during backfill", msg.id)
-                cache_msg = None
-        return msg, channel_id, cache_msg
-
-    # Ingest semaphore and task list prepared after formatting completes
-    ingest_sem = asyncio.Semaphore(rag_cfg.BACKFILL_CONCURRENCY)
-
-    async def _ingest_bounded(
-        msg: discord.Message, channel_id: int, cache_msg: dict
-    ) -> bool:
-        """Ingest one message while respecting concurrency limits."""
-        async with ingest_sem:
-            try:
-                created_at = msg.created_at
-                if created_at.tzinfo is None:
-                    created_at = created_at.replace(tzinfo=datetime.timezone.utc)
-                await rag.ingest_cache_message(
-                    server_id=msg.guild.id if msg.guild else 0,
-                    channel_id=channel_id,
-                    message_id=msg.id,
-                    author_id=msg.author.id,
-                    ts=created_at.timestamp(),
-                    cache_message=cache_msg,
-                )
-                return True
-            except Exception:
-                logger.exception("Failed to ingest message %s during backfill", msg.id)
-                return False
+            _, did_ingest = await process_message_for_rag(
+                msg,
+                channel_id,
+                ingest=True,
+                cache_msg=None,
+                memo={},
+                bot_user=bot_user,
+            )
+            return did_ingest
 
     # Enumerate candidate messages (opted-in user only, within lookback)
     for channel in channels:
@@ -88,28 +64,12 @@ async def _backfill_user_messages(
             async for msg in channel.history(limit=None, after=cutoff, oldest_first=True):
                 if msg.author.id != user.id:
                     continue
-                # Skip if any fragment already exists for this message_id (idempotent)
-                if await rag.message_exists(msg.id):
-                    continue
-                tasks.append(asyncio.create_task(_format_bounded(msg, channel.id)))
+                tasks.append(asyncio.create_task(_process_bounded(msg, channel.id)))
         except Exception:
             logger.exception("Failed to iterate channel %s during backfill", channel.id)
 
-    # Consume formatter results, scheduling ingestion immediately
-    ingest_tasks: list[asyncio.Task[bool]] = []
     if tasks:
         for coro in asyncio.as_completed(tasks):
-            msg, channel_id, cache_msg = await coro
-            if cache_msg is not None:
-                ingest_tasks.append(
-                    asyncio.create_task(
-                        _ingest_bounded(msg, channel_id, cache_msg)
-                    )
-                )
-
-    # Process ingests as they complete to track progress accurately
-    if ingest_tasks:
-        for coro in asyncio.as_completed(ingest_tasks):
             if await coro:
                 processed += 1
 
@@ -129,6 +89,17 @@ class RagOptInCommand:
     - Notifies the user when the backfill completes with a processed count.
     """
     command_str = "rag_opt_in"
+
+    @staticmethod
+    def match_feedback(message: discord.Message) -> bool:
+        """Identify canned feedback emitted by the opt-in command."""
+
+        content = (message.content or "").strip()
+        return (
+            content == "Opted in to RAG. Backfill queued."
+            or content == "Already opted in."
+            or content.startswith("Backfill complete.")
+        )
 
     @staticmethod
     async def handle(
@@ -169,6 +140,13 @@ class RagOptOutCommand:
     command_str = "rag_opt_out"
 
     @staticmethod
+    def match_feedback(message: discord.Message) -> bool:
+        """Identify canned feedback emitted by the opt-out command."""
+
+        content = (message.content or "").strip()
+        return content == "Opted out and data purged from RAG."
+
+    @staticmethod
     async def handle(
         client: discord.Client, message: discord.Message, args: str
     ) -> None:
@@ -194,6 +172,13 @@ class RagStatusCommand:
     - Reports whether the caller is currently opted in to RAG ingestion.
     """
     command_str = "rag_status"
+
+    @staticmethod
+    def match_feedback(message: discord.Message) -> bool:
+        """Identify canned feedback emitted by the status command."""
+
+        content = (message.content or "").strip()
+        return content in {"You are opted in.", "You are not opted in."}
 
     @staticmethod
     async def handle(

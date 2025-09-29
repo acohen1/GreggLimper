@@ -9,3 +9,4 @@ test.py
 *.db-shm
 *.sqlite
 gregg_limper/memory/cache/data/
+prompt.md

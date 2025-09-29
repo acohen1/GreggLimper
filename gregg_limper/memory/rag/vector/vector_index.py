@@ -263,7 +263,7 @@ async def search(
         res = col.search(
             data=[vec],
             anns_field="embedding",
-            search_params={"metric_type": "IP", "params": {"nprobe": milvus.MILVUS_NPROBE}},
+            param={"metric_type": "IP", "params": {"nprobe": milvus.MILVUS_NPROBE}},
             limit=k,
             expr=expr,
             consistency_level="Strong",

@@ -40,7 +40,15 @@ class CommandHandler(Protocol):
         """
 
 
+class FeedbackMatcher(Protocol):
+    """Predicate that returns ``True`` when a message is handler feedback."""
+
+    def __call__(self, message: discord.Message) -> bool:
+        ...
+
+
 _REGISTRY: Dict[str, CommandHandler] = {}
+_FEEDBACK_REGISTRY: Dict[str, FeedbackMatcher] = {}
 
 
 def register(cls: CommandHandler):
@@ -51,6 +59,14 @@ def register(cls: CommandHandler):
     :returns: The class unchanged.
     """
     _REGISTRY[cls.command_str] = cls
+
+    matcher = getattr(cls, "match_feedback", None)
+    if matcher is not None:
+        if not callable(matcher):  # pragma: no cover - defensive guard
+            raise TypeError(
+                f"Command handler {cls.__name__} defines a non-callable match_feedback"
+            )
+        _FEEDBACK_REGISTRY[cls.command_str] = matcher
     return cls
 
 
@@ -62,6 +78,11 @@ def get(command: str) -> CommandHandler | None:
 def all_commands() -> Dict[str, CommandHandler]:
     """Return copy of the command registry."""
     return dict(_REGISTRY)
+
+
+def feedback_matchers() -> Dict[str, FeedbackMatcher]:
+    """Return copy of registered feedback predicates keyed by command."""
+    return dict(_FEEDBACK_REGISTRY)
 
 
 # ------------------------------------------------------------------ #

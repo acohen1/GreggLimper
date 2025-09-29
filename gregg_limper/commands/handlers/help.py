@@ -10,6 +10,13 @@ class HelpCommand:
     command_str = "help"
 
     @staticmethod
+    def match_feedback(message: discord.Message) -> bool:
+        """Identify canned feedback emitted by the help command."""
+
+        content = (message.content or "").strip()
+        return content.startswith("Available commands:")
+
+    @staticmethod
     async def handle(
         client: discord.Client, message: discord.Message, args: str
     ) -> None:

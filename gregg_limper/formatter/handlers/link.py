@@ -18,6 +18,7 @@ import asyncio
 from . import register
 from ...clients.oai import summarize_url
 from ..model import LinkFragment
+from discord import Message
 
 import logging
 logger = logging.getLogger(__name__)
@@ -25,9 +26,12 @@ logger = logging.getLogger(__name__)
 @register
 class LinkHandler:
     media_type = "link"
+    needs_message = False
 
     @staticmethod
-    async def handle(urls: List[str]) -> List[LinkFragment]:
+    async def handle(
+        urls: List[str], message: Message | None = None
+    ) -> List[LinkFragment]:
         """
         Process URLs into :class:`LinkFragment` objects.
 
