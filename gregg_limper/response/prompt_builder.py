@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import OrderedDict
 from typing import Any, Dict, Iterable, List
 
 from discord import Message
@@ -10,6 +9,7 @@ from discord import Message
 from gregg_limper.clients import disc
 from gregg_limper.config import core, prompt
 from gregg_limper.memory.cache import GLCache
+from gregg_limper.memory.rag import consent
 from gregg_limper.memory.rag import (
     channel_summary as get_channel_summary,
     user_profile,
@@ -23,15 +23,25 @@ from .prompt_template import render_sys_prompt
 logger = logging.getLogger(__name__)
 
 
-def _ordered_unique(ids: Iterable[int]) -> List[int]:
-    """Return unique IDs preserving first-seen order."""
+async def _consented_ids(ids: Iterable[int]) -> List[int]:
+    """Return consented, non-bot user IDs preserving first-seen order."""
 
-    tracker: "OrderedDict[int, None]" = OrderedDict()
+    ordered: List[int] = []
+    seen: set[int] = set()
+
     for uid in ids:
-        if uid is None:
+        if uid is None or uid == disc.client.user.id or uid in seen:
             continue
-        tracker.setdefault(uid, None)
-    return list(tracker.keys())
+        seen.add(uid)
+        ordered.append(uid)
+
+    if not ordered:
+        return []
+
+    consent_checks = await asyncio.gather(
+        *(consent.is_opted_in(uid) for uid in ordered)
+    )
+    return [uid for uid, allowed in zip(ordered, consent_checks) if allowed]
 
 
 async def build_sys_prompt(
@@ -44,19 +54,17 @@ async def build_sys_prompt(
     chan_summary = await get_channel_summary(message.channel.id)
 
     # ------- User profiles (conversation participants + mentioned members) -------
-    candidate_ids: List[int] = []
+    candidate_sequence: List[int] = []
 
     if history is not None:
         # Profiles retrieved from history give us context on prior speakers.
-        candidate_ids.extend(history.participant_ids)
+        candidate_sequence.extend(sorted(history.participant_ids))
 
-    candidate_ids.append(message.author.id)
+    candidate_sequence.append(message.author.id)
     # Ensure freshly mentioned users are included even if absent from history.
-    candidate_ids.extend(u.id for u in message.mentions)
+    candidate_sequence.extend(u.id for u in message.mentions)
 
-    filtered_ids = [
-        uid for uid in _ordered_unique(candidate_ids) if uid != disc.client.user.id
-    ]
+    filtered_ids = await _consented_ids(candidate_sequence)
 
     profiles: List[Dict[str, Any]] = (
         await asyncio.gather(*(user_profile(u) for u in filtered_ids))

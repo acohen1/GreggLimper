@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Set
 
 from gregg_limper.memory.cache import GLCache
 from gregg_limper.clients import disc
+from gregg_limper.memory.rag import consent
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +18,7 @@ class HistoryContext:
     """Container for cached chat history and the participants it references."""
 
     messages: List[dict]
-    participant_ids: Tuple[int, ...]
+    participant_ids: Set[int]
 
 
 async def build_history(channel_id: int, limit: int) -> HistoryContext:
@@ -36,7 +38,7 @@ async def build_history(channel_id: int, limit: int) -> HistoryContext:
     )
 
     if not formatted_messages:
-        return HistoryContext(messages=[], participant_ids=())
+        return HistoryContext(messages=[], participant_ids=set())
 
     context: List[dict] = []
     for formatted in formatted_messages:
@@ -61,9 +63,18 @@ async def build_history(channel_id: int, limit: int) -> HistoryContext:
             if mentioned_id is not None and mentioned_id != disc.client.user.id:
                 participants.add(mentioned_id)
 
-    return HistoryContext(
-        messages=context, participant_ids=tuple(sorted(participants))
+    if not participants:
+        return HistoryContext(messages=context, participant_ids=set())
+
+    participant_list = sorted(participants)
+    consent_checks = await asyncio.gather(
+        *(consent.is_opted_in(uid) for uid in participant_list)
     )
+    consented_ids = {
+        uid for uid, opted_in in zip(participant_list, consent_checks) if opted_in
+    }
+
+    return HistoryContext(messages=context, participant_ids=consented_ids)
 
 
 __all__ = ["HistoryContext", "build_history"]
