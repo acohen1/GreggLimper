@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from dataclasses import dataclass
-from typing import List, Set
+from typing import Iterable, List, Set
 
 from gregg_limper.memory.cache import GLCache
 from gregg_limper.clients import disc
-from gregg_limper.memory.rag import consent
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +17,36 @@ class HistoryContext:
 
     messages: List[dict]
     participant_ids: Set[int]
+
+
+def _format_cached_messages(formatted_messages: Iterable[dict]) -> List[dict]:
+    """Translate cached messages into the chat completion API format."""
+    context: List[dict] = []
+    for formatted in formatted_messages:
+        role = (
+            "assistant"
+            if formatted.get("author") == disc.client.user.display_name
+            else "user"
+        )
+        content_str = json.dumps(formatted, ensure_ascii=False, separators=(",", ":"))
+        context.append({"role": role, "content": content_str})
+    return context
+
+
+def _extract_participants(raw_messages: Iterable) -> Set[int]:
+    """Collect unique participant identifiers from raw Discord messages."""
+    participants: set[int] = set()
+    for raw in raw_messages:
+        author_id = getattr(raw.author, "id", None)
+        if author_id is not None and author_id != disc.client.user.id:
+            participants.add(author_id)
+
+        for mentioned in getattr(raw, "mentions", []) or []:
+            mentioned_id = getattr(mentioned, "id", None)
+            if mentioned_id is not None and mentioned_id != disc.client.user.id:
+                participants.add(mentioned_id)
+
+    return participants
 
 
 async def build_history(channel_id: int, limit: int) -> HistoryContext:
@@ -41,30 +69,9 @@ async def build_history(channel_id: int, limit: int) -> HistoryContext:
     if not formatted_messages:
         return HistoryContext(messages=[], participant_ids=set())
 
-    # Convert formatted messages from cache to chat completion API format
-    context: List[dict] = []
-    for formatted in formatted_messages:
-        role = (
-            "assistant"
-            if formatted.get("author") == disc.client.user.display_name
-            else "user"
-        )
-        content_str = json.dumps(formatted, ensure_ascii=False, separators=(",", ":"))
-        context.append({"role": role, "content": content_str})
-
+    context = _format_cached_messages(formatted_messages)
     raw_messages = cache.list_raw_messages(channel_id, n=limit)
-    participants: set[int] = set()
-
-    # Use raw messages from cache to identify all unique participants (excluding the bot)
-    for raw in raw_messages:
-        author_id = getattr(raw.author, "id", None)
-        if author_id is not None and author_id != disc.client.user.id:
-            participants.add(author_id)
-
-        for mentioned in getattr(raw, "mentions", []) or []:
-            mentioned_id = getattr(mentioned, "id", None)
-            if mentioned_id is not None and mentioned_id != disc.client.user.id:
-                participants.add(mentioned_id)
+    participants = _extract_participants(raw_messages)
 
     return HistoryContext(messages=context, participant_ids=participants)
 

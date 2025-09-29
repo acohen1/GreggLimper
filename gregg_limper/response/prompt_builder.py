@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, Set, List
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, List, Sequence
 
 from discord import Message
 
@@ -23,98 +24,199 @@ from .prompt_template import render_sys_prompt
 logger = logging.getLogger(__name__)
 
 
+@dataclass(slots=True)
+class PromptContext:
+    """Aggregated context that feeds into the system prompt template."""
+
+    channel_summary: Any
+    user_profiles: List[Dict[str, Any]]
+    semantic_memory: List[Dict[str, Any]]
+
+
 async def build_sys_prompt(
     message: Message,
     history: HistoryContext | None = None,
 ) -> str:
     """Build the Markdown system prompt for the assistant."""
 
-    # ------- Channel summary -------
-    chan_summary = await get_channel_summary(message.channel.id)
+    context = await _build_prompt_context(message, history)
 
-    # ------- User profiles (conversation participants + mentioned members) -------
-    uids: List[int] = history.participant_ids if history else []
-
-    # Only include consenting users
-    consent_checks = await asyncio.gather(
-        *(consent.is_opted_in(uid) for uid in uids)
+    return render_sys_prompt(
+        channel_summary=context.channel_summary,
+        user_profiles=context.user_profiles,
+        semantic_memory=context.semantic_memory,
     )
-    filtered_ids = [
-        uid for uid, opted_in in zip(uids, consent_checks) if opted_in
+
+
+async def _build_prompt_context(
+    message: Message, history: HistoryContext | None
+) -> PromptContext:
+    """Gather all data required to render the system prompt."""
+
+    channel_summary_task = asyncio.create_task(
+        get_channel_summary(message.channel.id)
+    )
+    user_profiles_task = asyncio.create_task(
+        _gather_user_profiles(history.participant_ids if history else set())
+    )
+    semantic_memory_task = asyncio.create_task(_gather_semantic_memory(message))
+
+    channel_summary, user_profiles, semantic_memory = await asyncio.gather(
+        channel_summary_task,
+        user_profiles_task,
+        semantic_memory_task,
+    )
+
+    return PromptContext(
+        channel_summary=channel_summary,
+        user_profiles=user_profiles,
+        semantic_memory=semantic_memory,
+    )
+
+
+async def _gather_user_profiles(participant_ids: Iterable[int]) -> List[Dict[str, Any]]:
+    """Fetch consented user profiles for the participants in the conversation."""
+
+    participant_list = list(participant_ids)
+    if not participant_list:
+        return []
+
+    consent_checks = await asyncio.gather(
+        *(consent.is_opted_in(uid) for uid in participant_list)
+    )
+
+    consenting_ids = [
+        uid for uid, opted_in in zip(participant_list, consent_checks) if opted_in
+    ]
+    if not consenting_ids:
+        return []
+
+    profiles = await asyncio.gather(*(user_profile(uid) for uid in consenting_ids))
+    return list(profiles)
+
+
+async def _gather_semantic_memory(message: Message) -> List[Dict[str, Any]]:
+    """Retrieve semantically relevant memories for the provided message."""
+
+    fragments = _collect_fragment_text(message)
+    if not fragments:
+        return []
+
+    per_fragment_candidates = await asyncio.gather(
+        *(_vector_search_across_channels(message, text) for text in fragments)
+    )
+
+    semantic_candidates = _merge_semantic_candidates(
+        per_fragment_candidates, prompt.VECTOR_SEARCH_K
+    )
+    if not semantic_candidates:
+        return []
+
+    author_lookup = await _map_author_display_names(semantic_candidates)
+    return [
+        {
+            "author": author_lookup.get(
+                candidate.get("author_id"),
+                "Unknown"
+                if candidate.get("author_id") is None
+                else str(candidate.get("author_id")),
+            ),
+            "title": candidate.get("title"),
+            "content": candidate.get("content"),
+            "type": candidate.get("type"),
+            "url": candidate.get("url"),
+        }
+        for candidate in semantic_candidates
     ]
 
-    profiles: List[Dict[str, Any]] = (
-        await asyncio.gather(*(user_profile(u) for u in filtered_ids))
-        if filtered_ids
-        else []
-    )
 
-    # ------- Semantic memory (vector search) -------
+def _collect_fragment_text(message: Message) -> List[str]:
+    """Extract searchable fragment text for a message from the memo cache."""
+
     cache = GLCache()
     memo_record = cache.get_memo_record(message.channel.id, message.id)
+    fragments = memo_record.get("fragments", [])
 
-    # Grab all fragment contents for vector search
-    frags_content = [
-        content
-        for fragment in memo_record.get("fragments", [])
-        for content in [fragment.content_text()]
-        if content.strip()
-    ]
+    contents: List[str] = []
+    for fragment in fragments:
+        content = fragment.content_text()
+        if content and content.strip():
+            contents.append(content)
 
-    logger.info("Fragment contents for vector search: %s", frags_content)
+    logger.info("Fragment contents for vector search: %s", contents)
+    return contents
 
-    # Perform vector search for each fragment across all configured channels
-    # and aggregate results, ensuring no duplicates and excluding the current message
-    per_fragment_candidates: list[list[dict[str, Any]]] = []
-    for content in frags_content:
-        fragment_candidates: list[dict[str, Any]] = []
-        for c_id in core.CHANNEL_IDS:
-            results = await vector_search(
-                message.guild.id,
-                c_id,
-                content,
-                k=prompt.VECTOR_SEARCH_K + 1,   # +1 to account for exclusion of the current message
-            )
-            filtered = [
-                candidate
-                for candidate in results
-                if candidate.get("message_id") != message.id
-            ]
-            fragment_candidates.extend(filtered)
-        per_fragment_candidates.append(fragment_candidates)
 
-    semantic_candidates: list[dict[str, Any]] = []
-    seen_candidate_ids: set[int] = set()
+async def _vector_search_across_channels(
+    message: Message, content: str
+) -> List[Dict[str, Any]]:
+    """Run a vector search for a fragment across all configured channels."""
+
+    fragment_candidates: list[dict[str, Any]] = []
+    for channel_id in core.CHANNEL_IDS:
+        results = await vector_search(
+            message.guild.id,
+            channel_id,
+            content,
+            k=prompt.VECTOR_SEARCH_K + 1,
+        )
+        filtered = [
+            candidate
+            for candidate in results
+            if candidate.get("message_id") != message.id
+        ]
+        fragment_candidates.extend(filtered)
+
+    return fragment_candidates
+
+
+def _merge_semantic_candidates(
+    per_fragment_candidates: Sequence[Sequence[Dict[str, Any]]],
+    limit: int,
+) -> List[Dict[str, Any]]:
+    """Combine semantic candidates ensuring diversity and uniqueness."""
+
+    if not per_fragment_candidates or limit <= 0:
+        return []
+
+    merged: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
     indices = [0] * len(per_fragment_candidates)
 
-    # Round-robin selection from each fragment's candidates to ensure diversity
-    while len(semantic_candidates) < prompt.VECTOR_SEARCH_K and per_fragment_candidates:
+    while len(merged) < limit:
         progress_made = False
         for frag_idx, candidates in enumerate(per_fragment_candidates):
-            if len(semantic_candidates) >= prompt.VECTOR_SEARCH_K:
+            if len(merged) >= limit:
                 break
 
             while indices[frag_idx] < len(candidates):
                 candidate = candidates[indices[frag_idx]]
                 indices[frag_idx] += 1
+
                 candidate_id = candidate.get("id")
-
-                if candidate_id is not None and candidate_id in seen_candidate_ids:
-                    continue
-
                 if candidate_id is not None:
-                    seen_candidate_ids.add(candidate_id)
+                    if candidate_id in seen_ids:
+                        continue
+                    seen_ids.add(candidate_id)
 
-                semantic_candidates.append(candidate)
+                merged.append(candidate)
                 progress_made = True
                 break
 
         if not progress_made:
             break
 
+    return merged
+
+
+async def _map_author_display_names(
+    candidates: Iterable[Dict[str, Any]]
+) -> Dict[int, str]:
+    """Fetch Discord display names for candidate authors."""
+
     author_ids = {
         candidate.get("author_id")
-        for candidate in semantic_candidates
+        for candidate in candidates
         if candidate.get("author_id") is not None
     }
 
@@ -129,27 +231,7 @@ async def build_sys_prompt(
             continue
         author_names[author_id] = user.display_name
 
-    semantic_candidates = [
-        {
-            "author": author_names.get(
-                candidate.get("author_id"),
-                "Unknown"
-                if candidate.get("author_id") is None
-                else str(candidate.get("author_id")),
-            ),
-            "title": candidate.get("title"),
-            "content": candidate.get("content"),
-            "type": candidate.get("type"),
-            "url": candidate.get("url"),
-        }
-        for candidate in semantic_candidates
-    ]
-
-    return render_sys_prompt(
-        channel_summary=chan_summary,
-        user_profiles=profiles,
-        semantic_memory=semantic_candidates,
-    )
+    return author_names
 
 
 __all__ = ["build_sys_prompt"]
