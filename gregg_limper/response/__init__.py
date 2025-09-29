@@ -25,7 +25,8 @@ async def handle(message: discord.Message) -> str:
     Generate a reply using a pre-built system prompt.
     """
 
-    cache_msgs = await build_history(message.channel.id, core.CONTEXT_LENGTH)
+    history = await build_history(message.channel.id, core.CONTEXT_LENGTH)
+    cache_msgs = history.messages
 
     # Log history to file for debugging
     with open("debug_history.md", "w", encoding="utf-8") as f:
@@ -34,7 +35,7 @@ async def handle(message: discord.Message) -> str:
         logger.debug(f"History written to debug_history.md")
 
     # Generate the system prompt (RAG fetches inside)
-    sys_prompt = await build_sys_prompt(message)
+    sys_prompt = await build_sys_prompt(message, history=history)
 
     # Log the system prompt for debugging (write to a file due to length)
     with open("debug_sys_prompt.md", "w", encoding="utf-8") as f:

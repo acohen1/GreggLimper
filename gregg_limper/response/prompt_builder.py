@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, List
+from collections import OrderedDict
+from typing import Any, Dict, Iterable, List
 
 from discord import Message
 
@@ -15,23 +16,51 @@ from gregg_limper.memory.rag import (
     vector_search,
 )
 
+from .history_builder import HistoryContext
 from .prompt_template import render_sys_prompt
 
 
 logger = logging.getLogger(__name__)
 
 
-async def build_sys_prompt(message: Message) -> str:
+def _ordered_unique(ids: Iterable[int]) -> List[int]:
+    """Return unique IDs preserving first-seen order."""
+
+    tracker: "OrderedDict[int, None]" = OrderedDict()
+    for uid in ids:
+        if uid is None:
+            continue
+        tracker.setdefault(uid, None)
+    return list(tracker.keys())
+
+
+async def build_sys_prompt(
+    message: Message,
+    history: HistoryContext | None = None,
+) -> str:
     """Build the Markdown system prompt for the assistant."""
 
     # ------- Channel summary (cached digest) -------
     chan_summary = await get_channel_summary(message.channel.id)
 
-    # ------- User profiles (for mentioned members) -------
-    user_mentions = [u.id for u in message.mentions if u.id != disc.client.user.id]
+    # ------- User profiles (conversation participants + mentioned members) -------
+    candidate_ids: List[int] = []
+
+    if history is not None:
+        # Profiles retrieved from history give us context on prior speakers.
+        candidate_ids.extend(history.participant_ids)
+
+    candidate_ids.append(message.author.id)
+    # Ensure freshly mentioned users are included even if absent from history.
+    candidate_ids.extend(u.id for u in message.mentions)
+
+    filtered_ids = [
+        uid for uid in _ordered_unique(candidate_ids) if uid != disc.client.user.id
+    ]
+
     profiles: List[Dict[str, Any]] = (
-        await asyncio.gather(*(user_profile(u) for u in user_mentions))
-        if user_mentions
+        await asyncio.gather(*(user_profile(u) for u in filtered_ids))
+        if filtered_ids
         else []
     )
 

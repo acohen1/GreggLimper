@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import json
 import logging
-from typing import List
+from dataclasses import dataclass
+from typing import List, Tuple
 
 from gregg_limper.memory.cache import GLCache
 from gregg_limper.clients import disc
@@ -9,33 +11,59 @@ from gregg_limper.clients import disc
 logger = logging.getLogger(__name__)
 
 
-async def build_history(channel_id: int, limit: int) -> List[dict]:
-    """
-    Return the last `limit` cached messages as [{role, content}] in oldest -> newest order.
+@dataclass(slots=True)
+class HistoryContext:
+    """Container for cached chat history and the participants it references."""
+
+    messages: List[dict]
+    participant_ids: Tuple[int, ...]
+
+
+async def build_history(channel_id: int, limit: int) -> HistoryContext:
+    """Return cached history and participant IDs for prompting.
 
     Notes:
-        - role is "user" for human messages, "assistant" for bot messages; required by LLM chat APIs.
-        - content is a JSON string (serialized cached message dict)
+        - ``messages`` matches the format expected by chat completion APIs.
+        - ``participant_ids`` includes unique user identifiers observed in the returned history.
     """
     if limit < 1:
         logger.error("Message limit < 1; cannot include latest message.")
         raise ValueError("Message limit must be >= 1")
 
     cache = GLCache()
-    # Fetch the last `limit` messages in oldest -> newest order
-    formatted = cache.list_formatted_messages(channel_id, "llm", n=limit)
+    formatted_messages = cache.list_formatted_messages(
+        channel_id, mode="llm", n=limit
+    )
 
-    if not formatted:
-        return []
+    if not formatted_messages:
+        return HistoryContext(messages=[], participant_ids=())
 
     context: List[dict] = []
-    for msg in formatted:
+    for formatted in formatted_messages:
         role = (
             "assistant"
-            if msg.get("author") == disc.client.user.display_name
+            if formatted.get("author") == disc.client.user.display_name
             else "user"
         )
-        content_str = json.dumps(msg, ensure_ascii=False, separators=(",", ":"))
+        content_str = json.dumps(formatted, ensure_ascii=False, separators=(",", ":"))
         context.append({"role": role, "content": content_str})
 
-    return context
+    raw_messages = cache.list_raw_messages(channel_id, n=limit)
+    participants: set[int] = set()
+
+    for raw in raw_messages:
+        author_id = getattr(raw.author, "id", None)
+        if author_id is not None and author_id != disc.client.user.id:
+            participants.add(author_id)
+
+        for mentioned in getattr(raw, "mentions", []) or []:
+            mentioned_id = getattr(mentioned, "id", None)
+            if mentioned_id is not None and mentioned_id != disc.client.user.id:
+                participants.add(mentioned_id)
+
+    return HistoryContext(
+        messages=context, participant_ids=tuple(sorted(participants))
+    )
+
+
+__all__ = ["HistoryContext", "build_history"]
