@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Set, List
 
 from discord import Message
 
@@ -23,48 +23,25 @@ from .prompt_template import render_sys_prompt
 logger = logging.getLogger(__name__)
 
 
-async def _consented_ids(ids: Iterable[int]) -> List[int]:
-    """Return consented, non-bot user IDs preserving first-seen order."""
-
-    ordered: List[int] = []
-    seen: set[int] = set()
-
-    for uid in ids:
-        if uid is None or uid == disc.client.user.id or uid in seen:
-            continue
-        seen.add(uid)
-        ordered.append(uid)
-
-    if not ordered:
-        return []
-
-    consent_checks = await asyncio.gather(
-        *(consent.is_opted_in(uid) for uid in ordered)
-    )
-    return [uid for uid, allowed in zip(ordered, consent_checks) if allowed]
-
-
 async def build_sys_prompt(
     message: Message,
     history: HistoryContext | None = None,
 ) -> str:
     """Build the Markdown system prompt for the assistant."""
 
-    # ------- Channel summary (cached digest) -------
+    # ------- Channel summary -------
     chan_summary = await get_channel_summary(message.channel.id)
 
     # ------- User profiles (conversation participants + mentioned members) -------
-    candidate_sequence: List[int] = []
+    uids: List[int] = history.participant_ids if history else []
 
-    if history is not None:
-        # Profiles retrieved from history give us context on prior speakers.
-        candidate_sequence.extend(sorted(history.participant_ids))
-
-    candidate_sequence.append(message.author.id)
-    # Ensure freshly mentioned users are included even if absent from history.
-    candidate_sequence.extend(u.id for u in message.mentions)
-
-    filtered_ids = await _consented_ids(candidate_sequence)
+    # Only include consenting users
+    consent_checks = await asyncio.gather(
+        *(consent.is_opted_in(uid) for uid in uids)
+    )
+    filtered_ids = [
+        uid for uid, opted_in in zip(uids, consent_checks) if opted_in
+    ]
 
     profiles: List[Dict[str, Any]] = (
         await asyncio.gather(*(user_profile(u) for u in filtered_ids))
@@ -76,6 +53,7 @@ async def build_sys_prompt(
     cache = GLCache()
     memo_record = cache.get_memo_record(message.channel.id, message.id)
 
+    # Grab all fragment contents for vector search
     frags_content = [
         content
         for fragment in memo_record.get("fragments", [])
@@ -85,6 +63,8 @@ async def build_sys_prompt(
 
     logger.info("Fragment contents for vector search: %s", frags_content)
 
+    # Perform vector search for each fragment across all configured channels
+    # and aggregate results, ensuring no duplicates and excluding the current message
     per_fragment_candidates: list[list[dict[str, Any]]] = []
     for content in frags_content:
         fragment_candidates: list[dict[str, Any]] = []
@@ -93,7 +73,7 @@ async def build_sys_prompt(
                 message.guild.id,
                 c_id,
                 content,
-                k=prompt.VECTOR_SEARCH_K + 1,
+                k=prompt.VECTOR_SEARCH_K + 1,   # +1 to account for exclusion of the current message
             )
             filtered = [
                 candidate
@@ -107,6 +87,7 @@ async def build_sys_prompt(
     seen_candidate_ids: set[int] = set()
     indices = [0] * len(per_fragment_candidates)
 
+    # Round-robin selection from each fragment's candidates to ensure diversity
     while len(semantic_candidates) < prompt.VECTOR_SEARCH_K and per_fragment_candidates:
         progress_made = False
         for frag_idx, candidates in enumerate(per_fragment_candidates):
