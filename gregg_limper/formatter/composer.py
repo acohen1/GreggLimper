@@ -24,11 +24,21 @@ async def compose(message: Message, classified: Dict[str, Any]) -> List[Fragment
     :returns: List of fragments with stable ``id`` values.
     """
 
-    coros: List[asyncio.Future] = [
-        get_handler(mt).handle(classified[mt])
-        for mt in ORDER
-        if classified.get(mt) and get_handler(mt)
-    ]
+    coros: List[asyncio.Future] = []
+    for media_type in ORDER:
+        handler = get_handler(media_type)
+        if not handler:
+            continue
+
+        slice_data = classified.get(media_type)
+        if not slice_data:
+            continue
+
+        # Only pass the raw Discord message to handlers that explicitly request it.
+        if handler.needs_message:
+            coros.append(handler.handle(slice_data, message))
+        else:
+            coros.append(handler.handle(slice_data))
 
     # Execute slice handlers concurrently; absent types yield an empty list
     results = await asyncio.gather(*coros) if coros else []

@@ -1,5 +1,12 @@
-import textwrap
+"""
+Internal helpers shared within the cache package.
 
+This module currently provides logging utilities that summarize fragment
+payloads when the cache records memo activity. The functions are intentionally
+prefixed with underscores to signal that they are not part of the public API.
+"""
+
+import textwrap
 
 def _frag_summary(frag, *, width: int = 20) -> str:
     """Return a compact one-line summary for logs: e.g., text:'Hello…'."""
@@ -17,6 +24,7 @@ def _frags_preview(frags, *, width_each: int = 20, max_total_chars: int = 200) -
     total = 0
     for f in frags:
         s = _frag_summary(f, width=width_each)
+        # Once the preview budget is spent, bail early with an ellipsis marker.
         if total + len(s) + (2 if parts else 0) > max_total_chars:
             parts.append("…")
             break

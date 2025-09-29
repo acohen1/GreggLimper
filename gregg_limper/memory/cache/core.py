@@ -1,441 +1,110 @@
 """
-Per-channel caches backed by a deque (raw Discord message objects)
-    - Leftmost element  = oldest message
-    - Rightmost element = newest message
+Core helpers shared across cache ingestion paths.
 
-Memo table (dict) keyed by Discord message id (formatted payload)
-    - msg_id -> {"author", "fragments"}
-    - ``fragments`` holds :class:`Fragment` objects which are serialized on
-      demand for downstream consumers.
+This module defines the memo access surface used by :func:`process_message_for_rag`.
+``_MemoLike`` is a small :class:`typing.Protocol` describing the trio of
+``has``/``get``/``set`` methods required to participate in memo reuse so both
+``dict``-like mappings and dedicated stores (for example the on-disk
+``MemoStore``) satisfy the same static contract.
+
+The ``_memo_has``/``_memo_get``/``_memo_set`` helpers normalize interactions
+with those memo containers. Each helper handles ``None`` up front, delegates to
+the object's bespoke method when present, and otherwise falls back to standard
+mapping operations. This keeps the ingestion pipeline unaware of the concrete
+memo implementation while still enabling consistent fragment reuse.
 """
 
-from typing import Any, Iterable, List, Literal, Tuple
-from collections import deque
-from discord import (
-    Attachment,
-    Client,
-    File,
-    Member,
-    Message,
-    Role,
-    TextChannel,
-    User,
-)
+from __future__ import annotations
 
-from gregg_limper.config import cache
-from gregg_limper.formatter import format_message
-from .. import rag
-from ..rag import consent
-from . import memo
-from .utils import _frags_preview
+from typing import Mapping, MutableMapping, Protocol, Tuple
 
-import logging
-import datetime
-import asyncio
+from discord import Message
+from discord.abc import User
 
-logger = logging.getLogger(__name__)
+from . import formatting, ingestion
 
-# ---------- GLCache ------------------------
 
-Mode = Literal["llm", "full"]
+class _MemoLike(Protocol):
+    def has(self, message_id: int) -> bool: ...
 
-class GLCache:
-    """Singleton, channel-aware cache with memoized message formatting."""
+    def get(self, message_id: int) -> dict: ...
 
-    _instance = None
+    def set(self, message_id: int, payload: dict) -> None: ...
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._caches = {}
-            cls._instance._memo = {}
-        return cls._instance
 
-    # ------------------------------------------------------------------ #
-    # WRITE helpers
-    # ------------------------------------------------------------------ #
+def _memo_has(
+    memo: Mapping[int, dict] | MutableMapping[int, dict] | _MemoLike | None,
+    message_id: int,
+) -> bool:
+    if memo is None:
+        return False
+    if hasattr(memo, "has"):
+        return getattr(memo, "has")(message_id)
+    return message_id in memo  # type: ignore[arg-type]
 
-    async def add_message(
-        self,
-        channel_id: int,
-        message_obj: Message,
-        ingest: bool = True,
-        cache_msg: dict | None = None,
-    ) -> None:
-        """
-        Append *raw* Discord message to that channel's deque and memoize its
-        formatted representation. Raises KeyError if channel_id is unknown.
 
-        :param channel_id: The ID of the channel the message belongs to.
-        :param message_obj: The raw Discord message object to cache.
-        :param ingest: Whether to ingest the message into the RAG database.
-        :param cache_msg: Optional pre-formatted representation of ``message_obj``.
-            If provided, ``format_message`` will not be called.
-        :returns: ``None``.
-        """
-        if channel_id not in self._caches:
-            raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
+def _memo_get(
+    memo: Mapping[int, dict] | MutableMapping[int, dict] | _MemoLike | None,
+    message_id: int,
+) -> dict:
+    if memo is None:
+        raise KeyError(message_id)
+    if hasattr(memo, "get"):
+        getter = getattr(memo, "get")
+        return getter(message_id)
+    return memo[message_id]  # type: ignore[index]
 
-        cache = self._caches[channel_id]
 
-        # Preemptively check if we're about to evict a message from the cache
-        evicted = None
-        if len(cache) == cache.maxlen:
-            evicted = cache[0].id  # Leftmost = oldest = next to be evicted
+def _memo_set(
+    memo: Mapping[int, dict] | MutableMapping[int, dict] | _MemoLike | None,
+    message_id: int,
+    payload: dict,
+) -> None:
+    if memo is None:
+        return
+    if hasattr(memo, "set"):
+        setter = getattr(memo, "set")
+        setter(message_id, payload)
+        return
+    memo[message_id] = payload  # type: ignore[index]
 
-        cache.append(message_obj)
 
-        # Memo cleanup evicted message
-        if evicted is not None:
-            self._memo.pop(evicted, None)
+async def process_message_for_rag(
+    message_obj: Message,
+    channel_id: int,
+    *,
+    ingest: bool = True,
+    cache_msg: dict | None = None,
+    memo: Mapping[int, dict] | MutableMapping[int, dict] | _MemoLike | None = None,
+    bot_user: User | None = None,
+) -> Tuple[dict, bool]:
+    """Format ``message_obj`` and optionally ingest it into downstream RAG stores."""
 
-        # Enumerate resource availability to cleanly route message ingestion
-        msg_id = message_obj.id
-        resources = {
-            "memo": msg_id in self._memo,
-            "sqlite": False,
-            "vector": False,
-        }
+    msg_id = message_obj.id
+    memo_present = _memo_has(memo, msg_id)
 
-        if ingest:
-            try:
-                if not await consent.is_opted_in(message_obj.author.id):
-                    ingest = False
-                else:
-                    # NOTE: We call message_exists() as a safeguard to prevent duplicate ingestion. When rehydrating
-                    # the cache without a local memo, Discord messages may be re-processed through the LLM pipeline,
-                    # which can yield slightly different fragments. Tracking this helps us avoid inconsistent duplicates
-                    # and maintain cleaner storage across both SQLite and the vector index. If the I/O overhead of this
-                    # check proves too high, it can be reconsidered, since downstream upserts are already designed to
-                    # deduplicate. Removing message_exists should only be an issue if the local memo is lost or deleted.
-                    resources["sqlite"] = await rag.message_exists(msg_id)
-                    # Vector index hydration is coupled with SQLite writes so we mirror its availability here.
-                    resources["vector"] = resources["sqlite"]
-            except Exception:
-                resources["sqlite"] = resources["vector"] = False
-                ingest = False
+    should_ingest, resources = await ingestion.evaluate_ingestion(
+        message_obj,
+        ingest_requested=ingest,
+        memo_present=memo_present,
+        bot_user=bot_user,
+    )
 
-        # Memoize if missing
-        if not resources["memo"]:
-            if cache_msg is None:
-                self._memo[msg_id] = await format_message(message_obj)
-            else:
-                self._memo[msg_id] = cache_msg
+    if cache_msg is not None:
+        record = cache_msg
+        _memo_set(memo, msg_id, cache_msg)
+    elif memo_present:
+        record = _memo_get(memo, msg_id)
+    else:
+        record = await formatting.format_for_cache(message_obj)
+        _memo_set(memo, msg_id, record)
 
-        # Ingest into RAG if backing stores are missing
-        if ingest and not resources["sqlite"]:
-            try:
-                created_at = message_obj.created_at
-                # Discord test fixtures may have naive timestamps; normalize to UTC
-                if created_at.tzinfo is None:
-                    created_at = created_at.replace(tzinfo=datetime.timezone.utc)
-                await rag.ingest_cache_message(
-                    server_id=message_obj.guild.id if message_obj.guild else 0,
-                    channel_id=channel_id,
-                    message_id=msg_id,
-                    author_id=message_obj.author.id,
-                    ts=created_at.timestamp(),
-                    cache_message=self._memo[msg_id],
-                )  # crosses into SQLite + vector stores
-            except Exception:
-                logger.exception("RAG ingestion failed for message %s", msg_id)
+    did_ingest = False
+    if should_ingest and not resources.sqlite:
+        await ingestion.ingest_message(channel_id, message_obj, record)
+        did_ingest = True
 
-        # Persist memo if new or eviction occurred
-        if not resources["memo"] or evicted is not None:
-            memo_dict = {m.id: self._memo[m.id] for m in cache}
-            memo_dict = memo.prune(channel_id, memo_dict)
-            memo.save(channel_id, memo_dict)
+    return record, did_ingest
 
-        # Log message preview (only build if enabled)
-        if logger.isEnabledFor(logging.INFO):
-            preview = _frags_preview(
-                self._memo[msg_id]["fragments"], width_each=20, max_total_chars=200
-            )
-            logger.info(
-                "Cached msg %s in channel %s (%s) by %s | Frags: %s",
-                msg_id,
-                channel_id,
-                "new" if not resources["memo"] else "reuse",
-                self._memo[msg_id]["author"],
-                preview,
-            )
 
-    # ------------------------------------------------------------------ #
-    # READ helpers
-    # ------------------------------------------------------------------ #
-
-    @staticmethod
-    def _serialize(cache_msg: dict, mode: Mode) -> dict:
-        """
-        Serialize a cached message for a specific consumer.
-
-        :param cache_msg: Memoized message record.
-        :param mode: ``"llm"`` for prompt form or ``"full"`` for persistence.
-        :returns: Dict with ``author`` and ``fragments`` fields.
-        """
-        frags = cache_msg.get("fragments", [])
-        if mode == "llm":
-            return {
-                "author": cache_msg.get("author"),
-                "fragments": [f.to_llm() for f in frags],
-            }
-        return {
-            "author": cache_msg.get("author"),
-            "fragments": [f.to_dict() for f in frags],
-        }
-
-    def _iter_msgs(self, channel_id: int, n: int | None = None) -> list[Message]:
-        """
-        Return up to ``n`` most recent messages from a channel.
-
-        :param channel_id: Discord channel id.
-        :param n: Optional limit. ``None`` or ≥ cache length returns all.
-        :returns: Messages ordered oldest -> newest.
-        """
-        if channel_id not in self._caches:
-            raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
-        dq = self._caches[channel_id]
-        if n is None:
-            return list(dq)  # oldest -> newest
-        if n < 0:
-            raise ValueError("n must be >= 0 or None")
-        if n >= len(dq):
-            return list(dq)
-        return list(dq)[len(dq) - n :]  # tail, still oldest -> newest
-
-    def get_raw_messages(self, channel_id: int) -> List[Message]:
-        """
-        Return raw :class:`discord.Message` objects.
-
-        :param channel_id: Discord channel id.
-        :returns: Messages ordered oldest -> newest.
-        """
-        if channel_id not in self._caches:
-            raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
-        return list(self._caches[channel_id])
-
-    # TODO: If we need even more views, we could collapse the get_messages_llm and get_messages_full
-    # into a single method with a "mode" parameter (e.g., "llm", "full", "debug").
-
-    def get_messages_llm(self, channel_id: int, n: int | None = None) -> list[dict]:
-        """
-        Return recent messages formatted for LLM prompts.
-
-        :param channel_id: Discord channel id.
-        :param n: Optional max number of messages to return.
-        :returns: List of serialized message dicts (oldest -> newest).
-        """
-        return [
-            self._serialize(self._memo[m.id], "llm")
-            for m in self._iter_msgs(channel_id, n)
-        ]
-
-    def get_messages_full(self, channel_id: int, n: int | None = None) -> list[dict]:
-        """
-        Return recent messages with full fragment details.
-
-        :param channel_id: Discord channel id.
-        :param n: Optional max number of messages to return.
-        :returns: List of serialized message dicts (oldest -> newest).
-        """
-        return [
-            self._serialize(self._memo[m.id], "full")
-            for m in self._iter_msgs(channel_id, n)
-        ]
-
-    # ------------------------------------------------------------------ #
-    # INITIALIZATION
-    # ------------------------------------------------------------------ #
-
-    async def initialize(self, client: Client, channel_ids: list[int]) -> None:
-        """
-        Hydrate caches from Discord history.
-
-        Messages are added to the cache with ``ingest=False`` and a separate
-        ingestion step runs afterward. This keeps cache insertion ordered while
-        allowing RAG upserts to execute with bounded concurrency. Using
-        ``add_message(..., ingest=True)`` directly here would couple these two
-        operations and serialize initialization.
-
-        :param client: Discord client for API calls.
-        :param channel_ids: Channels to populate.
-        :returns: ``None``.
-        """
-        if self._caches and set(self._caches.keys()) == set(channel_ids):
-            logger.info("Cache already initialized with same channel IDs. Skipping.")
-            return
-
-        # Initialize empty data structures
-        self._caches = {cid: deque(maxlen=cache.CACHE_LENGTH) for cid in channel_ids}
-        self._memo = {}  # Clear to be safe -- this is a fresh start either way
-
-        # Populate caches with recent messages (UP TO cache.CACHE_LENGTH)
-        for cid in channel_ids:
-            # Seed the memo table from on-disk store. This ensures we don’t waste
-            # time re-formatting messages we already have cached payloads for.
-            loaded = memo.load(cid) if memo.exists(cid) else {}
-            self._memo.update(loaded)
-            
-            # Grab the history from Discord
-            channel = client.get_channel(cid)
-            if not isinstance(channel, TextChannel):
-                logger.warning(f"Channel {cid} is not a text channel or not found. Skipping.")
-                continue
-            logger.info(f"Fetching history for channel {cid}...")
-            history = [
-                msg
-                async for msg in channel.history(limit=cache.CACHE_LENGTH)
-            ]
-            messages = list(reversed(history))  # oldest -> newest
-
-            # Begin formatting parallelization with bounded concurrency
-            sem = asyncio.Semaphore(cache.INIT_CONCURRENCY)
-            tasks: list[asyncio.Task[tuple[int, Message, dict | None]]] = []
-
-            async def _format_bounded(idx: int, msg: Message) -> tuple[int, Message, dict | None]:
-                """Format one message while respecting concurrency limits."""
-                async with sem:
-                    try:
-                        cache_msg = await format_message(msg)
-                    except Exception:
-                        logger.exception("Failed to format message %s during init", msg.id)
-                        cache_msg = None
-                return idx, msg, cache_msg
-
-            # Ingest tasks collected after cache population (bounded later)
-            # We avoid calling ``add_message(..., ingest=True)`` so that cache
-            # insertion remains ordered while RAG upserts happen in parallel.
-            ingest_sem = asyncio.Semaphore(cache.INGEST_CONCURRENCY)
-            ingest_tasks: list[asyncio.Future] = []
-
-            async def _ingest_bounded(msg: Message, cache_msg: dict) -> None:
-                """Ingest one message while respecting concurrency limits."""
-                async with ingest_sem:
-                    try:
-                        # Skip if author is not opted in
-                        if not await consent.is_opted_in(msg.author.id):
-                            return
-                        # Skip if this message has already been ingested
-                        if await rag.message_exists(msg.id):
-                            return
-                        created_at = msg.created_at
-                        if created_at.tzinfo is None:
-                            created_at = created_at.replace(tzinfo=datetime.timezone.utc)
-                        await rag.ingest_cache_message(
-                            server_id=msg.guild.id if msg.guild else 0,
-                            channel_id=cid,
-                            message_id=msg.id,
-                            author_id=msg.author.id,
-                            ts=created_at.timestamp(),
-                            cache_message=cache_msg,
-                        )
-                    except Exception:
-                        logger.exception(
-                            "RAG ingestion failed for message %s during init", msg.id
-                        )
-
-            # Build a results list aligned to message order. Each result slot corresponds to a chronological index.
-            # - If the message is already memoized, mark it as ready immediately.  
-            # - Otherwise, schedule a format task to fill its slot later.
-            results: list[tuple[Message, dict | None] | None] = [None] * len(messages)
-            for idx, msg in enumerate(messages):
-                if msg.id in self._memo:
-                    results[idx] = (msg, None)
-                else:
-                    tasks.append(asyncio.create_task(_format_bounded(idx, msg)))
-
-            # Flush contiguous ready items at the start (likely memo hits).
-            # This ensures we start populating the cache immediately.
-            next_idx = 0
-            while next_idx < len(results) and results[next_idx] is not None:
-                m, _ = results[next_idx]
-                try:
-                    await self.add_message(cid, m, ingest=False)
-                except Exception:
-                    logger.exception(
-                        "Failed to add message %s during init", m.id
-                    )
-                else:
-                    if not await rag.message_exists(m.id):
-                        ingest_tasks.append(_ingest_bounded(m, self._memo[m.id]))
-                next_idx += 1
-
-            # As formatting tasks finish (possibly out of order), fill their slots.
-            # Every time a gap at `next_idx` becomes ready, flush forward until the next gap.
-            for coro in asyncio.as_completed(tasks):
-                idx, msg, cache_msg = await coro
-                results[idx] = (msg, cache_msg)
-                while next_idx < len(results) and results[next_idx] is not None:
-                    m, cm = results[next_idx]
-                    if cm is None:
-                        try:
-                            await self.add_message(cid, m, ingest=False)
-                        except Exception:
-                            logger.exception(
-                                "Failed to add message %s during init", m.id
-                            )
-                        else:
-                            if not await rag.message_exists(m.id):
-                                ingest_tasks.append(
-                                    _ingest_bounded(m, self._memo[m.id])
-                                )
-                    else:
-                        await self.add_message(
-                            cid, m, ingest=False, cache_msg=cm
-                        )
-                        if not await rag.message_exists(m.id):
-                            ingest_tasks.append(_ingest_bounded(m, self._memo[m.id]))
-                    next_idx += 1
-
-            # Final flush: if anything remained unprocessed (e.g. the tail),
-            # walk forward and push those into the cache in order.
-            while next_idx < len(results):
-                m, cm = results[next_idx]
-                if cm is None:
-                    try:
-                        await self.add_message(cid, m, ingest=False)
-                    except Exception:
-                        logger.exception(
-                            "Failed to add message %s during init", m.id
-                        )
-                    else:
-                        if not await rag.message_exists(m.id):
-                            ingest_tasks.append(
-                                _ingest_bounded(m, self._memo[m.id])
-                            )
-                else:
-                    await self.add_message(cid, m, ingest=False, cache_msg=cm)
-                    if not await rag.message_exists(m.id):
-                        ingest_tasks.append(_ingest_bounded(m, self._memo[m.id]))
-                next_idx += 1
-
-            # Perform all RAG ingests with bounded concurrency
-            if ingest_tasks:
-                await asyncio.gather(*ingest_tasks)
-
-            # Reconcile on-disk memo with final deque contents
-            memo_dict = {m.id: self._memo[m.id] for m in self._caches[cid]}
-            for mid in set(loaded) - set(memo_dict):
-                self._memo.pop(mid, None)
-            memo_dict = memo.prune(cid, memo_dict)
-            memo.save(cid, memo_dict)
-
-        logger.info(f"Initialized caches for {len(channel_ids)} channels")
-
-    # ------------------------------------------------------------------ #
-    # MAINTENANCE
-    # ------------------------------------------------------------------ #
-
-    def clear_cache(self, channel_id: int) -> None:
-        """
-        Remove all cached messages for a channel.
-
-        :param channel_id: Discord channel id.
-        :returns: ``None``.
-        """
-        if channel_id not in self._caches:
-            raise KeyError(f"Channel ID {channel_id} is not configured for caching.")
-
-        for msg in self._caches[channel_id]:
-            self._memo.pop(msg.id, None)  # safe even if already removed
-        self._caches[channel_id].clear()
+__all__ = ["process_message_for_rag"]
