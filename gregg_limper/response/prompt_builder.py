@@ -15,7 +15,7 @@ from gregg_limper.memory.rag import (
     vector_search,
 )
 
-from .sys_prompt import render_sys_prompt
+from .prompt_template import render_sys_prompt
 
 
 logger = logging.getLogger(__name__)

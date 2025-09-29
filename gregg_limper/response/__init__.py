@@ -13,8 +13,8 @@ from __future__ import annotations
 import discord
 from gregg_limper.config import core, local_llm
 from gregg_limper.clients import oai, ollama
-from .prompt import build_sys_prompt
-from .cache_adapter import build_history
+from .prompt_builder import build_sys_prompt
+from .history_builder import build_history
 
 import logging
 
