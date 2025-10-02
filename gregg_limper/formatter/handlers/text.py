@@ -55,7 +55,7 @@ class TextHandler:
             tokens = (f"<@{user.id}>", f"<@!{user.id}>")
             if bot_id is not None and user.id == bot_id:
                 for token in tokens:
-                    content = content.replace(token, "")
+                    content = content.replace(token, " ")
                 continue
 
             name = user.display_name

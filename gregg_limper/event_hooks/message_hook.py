@@ -54,4 +54,4 @@ async def handle(client: discord.Client, message: discord.Message):
         return
 
     response_text = await response.handle(message)
-    await message.channel.send(response_text)
+    # await message.channel.send(response_text)
