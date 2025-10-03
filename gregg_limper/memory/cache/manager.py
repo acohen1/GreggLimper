@@ -177,12 +177,14 @@ class GLCache:
         """
         Serialize memo records for ``channel_id`` into caller-friendly dictionaries.
 
-        Two serialization ``mode`` values are supported:
+        Three serialization ``mode`` values are supported:
 
         * ``"llm"`` - produces ``{"author": str, "fragments": [fragment.to_llm(), ...]}`` for
           fast language-model prompting.
         * ``"full"`` - returns ``{"author": str, "fragments": [fragment.to_dict(), ...]}``
           preserving every field emitted by the formatter.
+        * ``"markdown"`` - yields ``{"author": str, "fragments": [fragment.to_markdown(), ...]}``
+          providing natural-language bullets for lightweight displays.
 
         :param channel_id: Discord channel identifier whose cached messages to format.
         :param mode: Serialization mode controlling the payload shape returned.
