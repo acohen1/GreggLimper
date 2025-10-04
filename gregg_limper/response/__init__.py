@@ -1,54 +1,58 @@
-"""
-responses/
-==========
-This package defines post-caching behaviors that trigger when the bot is mentioned
-or otherwise flagged to respond. These actions do not bypass the formatting pipeline.
-
-Use case:
-- When the bot is mentioned in a message, we fetch recent context from GLCache,
-  build a prompt, and generate a response via OpenAI.
-"""
+"""Entry-point helpers for generating replies."""
 
 from __future__ import annotations
-import discord
-from gregg_limper.config import core, local_llm
-from gregg_limper.clients import oai, ollama
-from .prompt_builder import build_sys_prompt
-from .history_builder import build_history
 
+import json
 import logging
+from pathlib import Path
+
+import discord
+
+from gregg_limper.clients import oai, ollama
+from gregg_limper.config import core, local_llm
+
+from .pipeline import build_prompt_payload
 
 logger = logging.getLogger(__name__)
 
+
 async def handle(message: discord.Message) -> str:
-    """
-    Generate a reply using a pre-built system prompt.
-    """
+    """Generate a reply using the prompt pipeline."""
 
-    history = await build_history(message.channel.id, core.CONTEXT_LENGTH)
-    cache_msgs = history.messages
+    payload = await build_prompt_payload(message)
 
-    # Log history to file for debugging
-    with open("debug_history.md", "w", encoding="utf-8") as f:
-        for msg in cache_msgs:
-            f.write(f"{msg['role']}: {msg['content']}\n\n")
-        logger.debug(f"History written to debug_history.md")
-
-    # Generate the system prompt (RAG fetches inside)
-    sys_prompt = await build_sys_prompt(message, history=history)
-
-    # Log the system prompt for debugging (write to a file due to length)
-    with open("debug_sys_prompt.md", "w", encoding="utf-8") as f:
-        f.write(sys_prompt)
-        logger.debug(f"System prompt written to debug_sys_prompt.md")
-
-
-    messages = [{"role": "system", "content": sys_prompt}, *cache_msgs]
+    _write_debug_file("debug_history.md", payload.history.messages)
+    _write_debug_file("debug_context.md", payload.context.semantic_memory)
+    _write_debug_file("debug_messages.json", payload.messages, json_dump=True)
 
     if local_llm.USE_LOCAL:
-        return await ollama.chat(messages, model=local_llm.LOCAL_MODEL_ID)
-    else:
-        return await oai.chat(messages, model=core.MSG_MODEL_ID)
+        return await ollama.chat(payload.messages, model=local_llm.LOCAL_MODEL_ID)
+    return await oai.chat(payload.messages, model=core.MSG_MODEL_ID)
+
+
+def _write_debug_file(
+    filename: str, data, json_dump: bool = False
+) -> None:  # pragma: no cover - debug helper
+    try:
+        path = Path(filename)
+        if json_dump:
+            path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        else:
+            with path.open("w", encoding="utf-8") as handle:
+                if isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict):
+                            role = item.get("role", "?")
+                            content = item.get("content", "")
+                            handle.write(f"{role}: {content}\n\n")
+                        else:
+                            handle.write(f"{item}\n")
+                else:
+                    handle.write(str(data))
+    except Exception as exc:
+        logger.debug("Failed to write %s: %s", filename, exc)
 
 
 __all__ = ["handle"]

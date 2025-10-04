@@ -1,9 +1,11 @@
+"""Utilities for collecting dynamic context for LLM prompts."""
+
 from __future__ import annotations
 
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Sequence
+from typing import Any, Iterable, Sequence
 
 from discord import Message
 
@@ -12,52 +14,33 @@ from gregg_limper.config import core, prompt
 from gregg_limper.memory.cache import GLCache
 from gregg_limper.memory.rag import consent
 from gregg_limper.memory.rag import (
-    channel_summary as get_channel_summary,
-    user_profile,
+    channel_summary as fetch_channel_summary,
+    user_profile as fetch_user_profile,
     vector_search,
 )
-
-from .history_builder import HistoryContext
-from .prompt_template import render_sys_prompt
-
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
-class PromptContext:
-    """Aggregated context that feeds into the system prompt template."""
+class ConversationContext:
+    """Dynamic data retrieved to aid a model response."""
 
-    channel_summary: Any
-    user_profiles: List[Dict[str, Any]]
-    semantic_memory: List[Dict[str, Any]]
-
-
-async def build_sys_prompt(
-    message: Message,
-    history: HistoryContext | None = None,
-) -> str:
-    """Build the Markdown system prompt for the assistant."""
-
-    context = await _build_prompt_context(message, history)
-
-    return render_sys_prompt(
-        channel_summary=context.channel_summary,
-        user_profiles=context.user_profiles,
-        semantic_memory=context.semantic_memory,
-    )
+    channel_summary: str | None
+    user_profiles: list[dict[str, Any]]
+    semantic_memory: list[dict[str, Any]]
 
 
-async def _build_prompt_context(
-    message: Message, history: HistoryContext | None
-) -> PromptContext:
-    """Gather all data required to render the system prompt."""
+async def gather_context(
+    message: Message, *, participant_ids: Iterable[int]
+) -> ConversationContext:
+    """Collect all dynamic context required for a reply."""
 
     channel_summary_task = asyncio.create_task(
-        get_channel_summary(message.channel.id)
+        fetch_channel_summary(message.channel.id)
     )
     user_profiles_task = asyncio.create_task(
-        _gather_user_profiles(history.participant_ids if history else set())
+        _gather_user_profiles(participant_ids)
     )
     semantic_memory_task = asyncio.create_task(_gather_semantic_memory(message))
 
@@ -67,43 +50,45 @@ async def _build_prompt_context(
         semantic_memory_task,
     )
 
-    return PromptContext(
+    return ConversationContext(
         channel_summary=channel_summary,
         user_profiles=user_profiles,
         semantic_memory=semantic_memory,
     )
 
 
-async def _gather_user_profiles(participant_ids: Iterable[int]) -> List[Dict[str, Any]]:
-    """Fetch consented user profiles for the participants in the conversation."""
+async def _gather_user_profiles(
+    participant_ids: Iterable[int],
+) -> list[dict[str, Any]]:
+    """Fetch user profiles for opted-in participants."""
 
-    participant_list = list(participant_ids)
-    if not participant_list:
+    participants = [pid for pid in participant_ids if pid is not None]
+    if not participants:
         return []
 
     consent_checks = await asyncio.gather(
-        *(consent.is_opted_in(uid) for uid in participant_list)
+        *(consent.is_opted_in(pid) for pid in participants)
     )
 
-    consenting_ids = [
-        uid for uid, opted_in in zip(participant_list, consent_checks) if opted_in
+    consenting = [
+        pid for pid, opted_in in zip(participants, consent_checks) if opted_in
     ]
-    if not consenting_ids:
+    if not consenting:
         return []
 
-    profiles = await asyncio.gather(*(user_profile(uid) for uid in consenting_ids))
-    return list(profiles)
+    profiles = await asyncio.gather(*(fetch_user_profile(pid) for pid in consenting))
+    return [profile for profile in profiles if profile]
 
 
-async def _gather_semantic_memory(message: Message) -> List[Dict[str, Any]]:
-    """Retrieve semantically relevant memories for the provided message."""
+async def _gather_semantic_memory(message: Message) -> list[dict[str, Any]]:
+    """Retrieve semantic memories relevant to the provided message."""
 
     fragments = _collect_fragment_text(message)
     if not fragments:
         return []
 
     per_fragment_candidates = await asyncio.gather(
-        *(_vector_search_across_channels(message, text) for text in fragments)
+        *(_vector_search_across_channels(message, fragment) for fragment in fragments)
     )
 
     semantic_candidates = _merge_semantic_candidates(
@@ -113,35 +98,34 @@ async def _gather_semantic_memory(message: Message) -> List[Dict[str, Any]]:
         return []
 
     author_lookup = await _map_author_display_names(semantic_candidates)
-    return [
-        {
-            "author": author_lookup.get(
-                candidate.get("author_id"),
-                "Unknown"
-                if candidate.get("author_id") is None
-                else str(candidate.get("author_id")),
-            ),
-            "title": candidate.get("title"),
-            "content": candidate.get("content"),
-            "type": candidate.get("type"),
-            "url": candidate.get("url"),
-        }
-        for candidate in semantic_candidates
-    ]
+    formatted: list[dict[str, Any]] = []
+    for candidate in semantic_candidates:
+        author_id = candidate.get("author_id")
+        formatted.append(
+            {
+                "author": author_lookup.get(author_id, _fallback_author_name(author_id)),
+                "title": candidate.get("title"),
+                "content": candidate.get("content"),
+                "type": candidate.get("type"),
+                "url": candidate.get("url"),
+            }
+        )
+
+    return formatted
 
 
-def _collect_fragment_text(message: Message) -> List[str]:
-    """Extract searchable fragment text for a message from the memo cache."""
+def _collect_fragment_text(message: Message) -> list[str]:
+    """Return textual fragments cached for the given message."""
 
     cache = GLCache()
     memo_record = cache.get_memo_record(message.channel.id, message.id)
     fragments = memo_record.get("fragments", [])
 
-    contents: List[str] = []
+    contents: list[str] = []
     for fragment in fragments:
         content = fragment.content_text()
         if content and content.strip():
-            contents.append(content)
+            contents.append(content.strip())
 
     logger.info("Fragment contents for vector search: %s", contents)
     return contents
@@ -149,8 +133,8 @@ def _collect_fragment_text(message: Message) -> List[str]:
 
 async def _vector_search_across_channels(
     message: Message, content: str
-) -> List[Dict[str, Any]]:
-    """Run a vector search for a fragment across all configured channels."""
+) -> list[dict[str, Any]]:
+    """Run a vector search for the content across configured channels."""
 
     fragment_candidates: list[dict[str, Any]] = []
     for channel_id in core.CHANNEL_IDS:
@@ -171,10 +155,10 @@ async def _vector_search_across_channels(
 
 
 def _merge_semantic_candidates(
-    per_fragment_candidates: Sequence[Sequence[Dict[str, Any]]],
+    per_fragment_candidates: Sequence[Sequence[dict[str, Any]]],
     limit: int,
-) -> List[Dict[str, Any]]:
-    """Combine semantic candidates ensuring diversity and uniqueness."""
+) -> list[dict[str, Any]]:
+    """Merge semantic search results ensuring diversity and uniqueness."""
 
     if not per_fragment_candidates or limit <= 0:
         return []
@@ -210,8 +194,8 @@ def _merge_semantic_candidates(
 
 
 async def _map_author_display_names(
-    candidates: Iterable[Dict[str, Any]]
-) -> Dict[int, str]:
+    candidates: Iterable[dict[str, Any]]
+) -> dict[int, str]:
     """Fetch Discord display names for candidate authors."""
 
     author_ids = {
@@ -224,7 +208,7 @@ async def _map_author_display_names(
     for author_id in author_ids:
         try:
             user = await disc.client.fetch_user(author_id)
-        except Exception as exc:
+        except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning(
                 "Failed to fetch author %s display name: %s", author_id, exc
             )
@@ -234,4 +218,11 @@ async def _map_author_display_names(
     return author_names
 
 
-__all__ = ["build_sys_prompt"]
+def _fallback_author_name(author_id: Any) -> str:
+    if author_id is None:
+        return "Unknown"
+    return str(author_id)
+
+
+__all__ = ["ConversationContext", "gather_context"]
+
