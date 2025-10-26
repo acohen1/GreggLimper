@@ -18,7 +18,7 @@ class Core:
     IMG_MODEL_ID: str = os.getenv("IMG_MODEL_ID")
     WEB_MODEL_ID: str = os.getenv("WEB_MODEL_ID")
     CHANNEL_IDS: List[int] = field(default_factory=lambda: _split_ids(os.getenv("CHANNEL_IDS", "")))
-    CONTEXT_LENGTH: int = int(os.getenv("CONTEXT_LENGTH", "50"))
+    CONTEXT_LENGTH: int = int(os.getenv("CONTEXT_LENGTH", "10"))
     MAX_IMAGE_MB: int = int(os.getenv("MAX_IMAGE_MB", "5"))
     MAX_GIF_MB: int = int(os.getenv("MAX_GIF_MB", "10"))
     YT_THUMBNAIL_SIZE: str = os.getenv("YT_THUMBNAIL_SIZE", "medium")

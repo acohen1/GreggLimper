@@ -156,7 +156,9 @@ class GLCache:
             )
         return self._memo_store.get(message_id)
 
-    def list_raw_messages(self, channel_id: int) -> list[Message]:
+    def list_raw_messages(
+        self, channel_id: int, n: int | None = None
+    ) -> list[Message]:
         """
         Return the raw :class:`discord.Message` objects retained for ``channel_id``.
 
@@ -164,9 +166,10 @@ class GLCache:
         result mirrors what subsequent memo serialization will process.
 
         :param channel_id: Discord channel identifier whose cache should be read.
+        :param n: Optional maximum number of most recent messages to include (default all).
         :return: Live :class:`discord.Message` instances ordered according to cache retention.
         """
-        return self._get_state(channel_id).iter_messages()
+        return self._get_state(channel_id).iter_messages(n)
 
     def list_formatted_messages(
         self, channel_id: int, mode: Mode, n: int | None = None
@@ -174,12 +177,14 @@ class GLCache:
         """
         Serialize memo records for ``channel_id`` into caller-friendly dictionaries.
 
-        Two serialization ``mode`` values are supported:
+        Three serialization ``mode`` values are supported:
 
         * ``"llm"`` - produces ``{"author": str, "fragments": [fragment.to_llm(), ...]}`` for
           fast language-model prompting.
         * ``"full"`` - returns ``{"author": str, "fragments": [fragment.to_dict(), ...]}``
           preserving every field emitted by the formatter.
+        * ``"markdown"`` - yields ``{"author": str, "fragments": [fragment.to_markdown(), ...]}``
+          providing natural-language bullets for lightweight displays.
 
         :param channel_id: Discord channel identifier whose cached messages to format.
         :param mode: Serialization mode controlling the payload shape returned.

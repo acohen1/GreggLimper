@@ -8,5 +8,7 @@ test.py
 *.db-wal
 *.db-shm
 *.sqlite
-gregg_limper/memory/cache/data/
+src/gregg_limper/memory/cache/data/
 prompt.md
+debug_sys_prompt.md
+debug_history.md

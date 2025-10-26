@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-Mode = Literal["llm", "full"]
+Mode = Literal["llm", "full", "markdown"]
 
 
 def serialize(cache_msg: dict, mode: Mode) -> dict:
@@ -25,6 +25,11 @@ def serialize(cache_msg: dict, mode: Mode) -> dict:
         return {
             "author": cache_msg.get("author"),
             "fragments": [frag.to_llm() for frag in fragments],
+        }
+    if mode == "markdown":
+        return {
+            "author": cache_msg.get("author"),
+            "fragments": [frag.to_markdown() for frag in fragments],
         }
     # Full form keeps every field so operators can inspect the formatter output verbatim.
     return {

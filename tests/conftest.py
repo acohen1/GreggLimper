@@ -3,8 +3,10 @@ import warnings
 from pathlib import Path
 import types
 
-# Add project root to sys.path for imports
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Ensure the src-based package is importable during tests
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 # Ensure required environment variables for Config.validate()
 os.environ.setdefault("DISCORD_API_TOKEN", "test-token")
