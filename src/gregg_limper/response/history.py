@@ -60,7 +60,8 @@ def _convert_history(formatted_messages: Sequence[dict]) -> List[dict[str, str]]
 
 
 def _resolve_role(author_name: str) -> str:
-    bot_display_name = getattr(disc.client.user, "display_name", None)
+    bot_user = getattr(getattr(disc, "bot", None), "user", None)
+    bot_display_name = getattr(bot_user, "display_name", None)
     if bot_display_name and author_name == bot_display_name:
         return "assistant"
     return "user"
@@ -100,18 +101,20 @@ def _extract_participants(raw_messages: Iterable) -> Set[int]:
     """Collect participant IDs from raw Discord messages."""
 
     participants: set[int] = set()
+    bot_user = getattr(getattr(disc, "bot", None), "user", None)
+    bot_user_id = getattr(bot_user, "id", None)
+
     for raw in raw_messages:
         author_id = getattr(raw.author, "id", None)
-        if author_id is not None and author_id != disc.client.user.id:
+        if author_id is not None and author_id != bot_user_id:
             participants.add(author_id)
 
         for mentioned in getattr(raw, "mentions", []) or []:
             mentioned_id = getattr(mentioned, "id", None)
-            if mentioned_id is not None and mentioned_id != disc.client.user.id:
+            if mentioned_id is not None and mentioned_id != bot_user_id:
                 participants.add(mentioned_id)
 
     return participants
 
 
 __all__ = ["HistoryContext", "build_history"]
-

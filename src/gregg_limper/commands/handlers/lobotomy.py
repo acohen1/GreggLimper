@@ -1,21 +1,23 @@
 from __future__ import annotations
+
 import discord
-from . import register
+from discord import app_commands
+from discord.ext import commands
+
+from .. import register_cog
 
 
-@register
-class LobotomyCommand:
-    command_str = "lobotomy"
+@register_cog
+class Lobotomy(commands.Cog):
+    """Utility command for demo purposes."""
 
-    @staticmethod
-    def match_feedback(message: discord.Message) -> bool:
-        """Identify canned feedback emitted by the lobotomy command."""
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
 
-        content = (message.content or "").strip()
-        return content == "Initiating lobotomy sequence..."
+    @app_commands.command(name="lobotomy", description="Trigger the lobotomy sequence.")
+    async def lobotomy(self, interaction: discord.Interaction) -> None:
+        """Respond with the lobotomy confirmation message."""
 
-    @staticmethod
-    async def handle(
-        client: discord.Client, message: discord.Message, args: str
-    ) -> None:
-        await message.channel.send("Initiating lobotomy sequence...")
+        await interaction.response.send_message(
+            "Initiating lobotomy sequence...", ephemeral=True
+        )

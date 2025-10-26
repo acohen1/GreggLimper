@@ -5,8 +5,10 @@ import datetime
 import logging
 
 import discord
+from discord import app_commands
+from discord.ext import commands
 
-from . import register
+from .. import register_cog
 from ...memory.cache.core import process_message_for_rag
 from ...memory.rag import consent, purge_user
 from gregg_limper.config import rag as rag_cfg
@@ -75,122 +77,77 @@ async def _backfill_user_messages(
 
     return processed
 
+def _log_background_task(task: asyncio.Task[None]) -> None:
+    try:
+        task.result()
+    except Exception:
+        logger.exception("RAG backfill task failed")
+
+
 # ----------------------------- Command Definitions ----------------------------- #
 
-@register
-class RagOptInCommand:
+
+@register_cog
+class RagOpt(commands.Cog):
     """
-    Slash command: ``/rag_opt_in``
+    Slash commands for RAG consent management.
 
-    Effect
-    ------
-    - Adds the caller to the RAG consent registry.
-    - Queues a non-blocking historical backfill across allowed channels.
-    - Notifies the user when the backfill completes with a processed count.
+    Provides opt-in, opt-out, and status commands that coordinate with the
+    consent registry and storage backends.
     """
-    command_str = "rag_opt_in"
 
-    @staticmethod
-    def match_feedback(message: discord.Message) -> bool:
-        """Identify canned feedback emitted by the opt-in command."""
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
 
-        content = (message.content or "").strip()
-        return (
-            content == "Opted in to RAG. Backfill queued."
-            or content == "Already opted in."
-            or content.startswith("Backfill complete.")
+    @app_commands.command(
+        name="rag_opt_in",
+        description="Opt in to knowledge retention and queue a history backfill.",
+    )
+    async def rag_opt_in(self, interaction: discord.Interaction) -> None:
+        """Opt the caller into RAG and trigger historical backfill."""
+
+        added = await consent.add_user(interaction.user.id)
+        if not added:
+            await interaction.response.send_message(
+                "Already opted in.", ephemeral=True
+            )
+            return
+
+        await interaction.response.send_message(
+            "Opted in to RAG. Backfill queued.", ephemeral=True
         )
 
-    @staticmethod
-    async def handle(
-        client: discord.Client, message: discord.Message, args: str
-    ) -> None:
-        """
-        Opt the caller into RAG and trigger historical backfill.
+        async def _backfill_and_notify() -> None:
+            processed = await _backfill_user_messages(
+                interaction.user, interaction.guild
+            )
+            await interaction.followup.send(
+                f"Backfill complete. Ingested {processed} messages.", ephemeral=True
+            )
 
-        :param client: Discord client instance (unused).
-        :param message: Command message invoking the opt-in.
-        :param args: Raw argument string (unused).
-        """
-        added = await consent.add_user(message.author.id)
-        if added:
-            await message.channel.send("Opted in to RAG. Backfill queued.")
+        task = asyncio.create_task(_backfill_and_notify())
+        task.add_done_callback(_log_background_task)
 
-            async def _backfill_and_notify() -> None:
-                processed = await _backfill_user_messages(message.author, message.guild)
-                await message.channel.send(
-                    f"Backfill complete. Ingested {processed} messages."
-                )
+    @app_commands.command(
+        name="rag_opt_out",
+        description="Opt out of knowledge retention and purge stored data.",
+    )
+    async def rag_opt_out(self, interaction: discord.Interaction) -> None:
+        """Remove caller from consent registry and purge their data."""
 
-            asyncio.create_task(_backfill_and_notify())
-        else:
-            await message.channel.send("Already opted in.")
+        await consent.remove_user(interaction.user.id)
+        await purge_user(interaction.user.id)
+        await interaction.response.send_message(
+            "Opted out and data purged from RAG.", ephemeral=True
+        )
 
+    @app_commands.command(
+        name="rag_status",
+        description="Report whether you are currently opted in to RAG ingestion.",
+    )
+    async def rag_status(self, interaction: discord.Interaction) -> None:
+        """Report the caller's current RAG consent state."""
 
-@register
-class RagOptOutCommand:
-    """
-    Slash command: ``/rag_opt_out``
-
-    Effect
-    ------
-    - Removes the caller from the RAG consent registry.
-    - Purges all of the caller's data from both SQL and the vector index.
-    """
-    command_str = "rag_opt_out"
-
-    @staticmethod
-    def match_feedback(message: discord.Message) -> bool:
-        """Identify canned feedback emitted by the opt-out command."""
-
-        content = (message.content or "").strip()
-        return content == "Opted out and data purged from RAG."
-
-    @staticmethod
-    async def handle(
-        client: discord.Client, message: discord.Message, args: str
-    ) -> None:
-        """
-        Remove caller from consent registry and purge their data.
-
-        :param client: Discord client instance (unused).
-        :param message: Command message invoking the opt-out.
-        :param args: Raw argument string (unused).
-        """
-        await consent.remove_user(message.author.id)
-        await purge_user(message.author.id)
-        await message.channel.send("Opted out and data purged from RAG.")
-
-
-@register
-class RagStatusCommand:
-    """
-    Slash command: ``/rag_status``
-
-    Effect
-    ------
-    - Reports whether the caller is currently opted in to RAG ingestion.
-    """
-    command_str = "rag_status"
-
-    @staticmethod
-    def match_feedback(message: discord.Message) -> bool:
-        """Identify canned feedback emitted by the status command."""
-
-        content = (message.content or "").strip()
-        return content in {"You are opted in.", "You are not opted in."}
-
-    @staticmethod
-    async def handle(
-        client: discord.Client, message: discord.Message, args: str
-    ) -> None:
-        """
-        Report the caller's current RAG consent state.
-
-        :param client: Discord client instance (unused).
-        :param message: Command message invoking the status check.
-        :param args: Raw argument string (unused).
-        """
-        opted = await consent.is_opted_in(message.author.id)
+        opted = await consent.is_opted_in(interaction.user.id)
         msg = "You are opted in." if opted else "You are not opted in."
-        await message.channel.send(msg)
+        await interaction.response.send_message(msg, ephemeral=True)

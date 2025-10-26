@@ -1,10 +1,15 @@
 from dataclasses import dataclass
 import os
+from pathlib import Path
+
+_DEFAULT_SQLITE_PATH = (
+    Path(__file__).resolve().parent.parent / "memory" / "rag" / "sql" / "memory.db"
+)
 
 
 @dataclass
 class Rag:
-    SQL_DB_DIR: str = os.getenv("SQL_DB_DIR", "gregg_limper/memory/rag/sql/memory.db")  # SQLite file path
+    SQL_DB_DIR: str = os.getenv("SQL_DB_DIR", str(_DEFAULT_SQLITE_PATH))               # SQLite file path
     EMB_MODEL_ID: str = os.getenv("EMB_MODEL_ID", "text-embedding-3-small")             # OpenAI embedding model
     EMB_DIM: int = int(os.getenv("EMB_DIM", "1536"))                                    # Embedding dimension (OpenAI text-embedding-3-small)
     MAINTENANCE_INTERVAL: int = int(os.getenv("MAINTENANCE_INTERVAL", "3600"))          # Seconds between maintenance tasks

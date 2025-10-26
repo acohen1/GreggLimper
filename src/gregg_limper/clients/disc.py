@@ -1,55 +1,73 @@
-"""Helpers for interacting with Discord's API"""
+"""Discord bot bootstrap utilities."""
+
+from __future__ import annotations
+
+import logging
+
 import discord
+from discord.ext import commands as discord_commands
+
+from gregg_limper import commands as gl_commands
 from gregg_limper.config import core
 from gregg_limper.event_hooks import message_hook, reaction_hook, ready_hook
 from gregg_limper.memory.rag import scheduler
 
-import logging
-
 logger = logging.getLogger(__name__)
 
-# --- Intents --------------
+# --- Intents --------------------------------------------------------------- #
 intents = discord.Intents.all()
-# intents.message_content = True
-# intents.guilds = True
-# intents.members = True
-# intents.reactions = True
-# intents.presences = True
-# intents.emojis = True
-# intents.typing = True
 
-# --- Client --------------
-class GLClient(discord.Client):
+
+class GLBot(discord_commands.Bot):
+    """Primary Discord bot implementation with slash command support."""
+
+    def __init__(self) -> None:
+        super().__init__(command_prefix=discord_commands.when_mentioned, intents=intents)
+
+    async def setup_hook(self) -> None:
+        """Register slash commands and synchronise with Discord."""
+
+        await gl_commands.setup(self)
+
+        try:
+            synced = await self.tree.sync()
+            logger.info("Synced %d application command(s)", len(synced))
+        except Exception:
+            logger.exception("Failed to sync application commands")
+
     async def close(self) -> None:
         await scheduler.stop()
         await super().close()
 
-client = GLClient(intents=intents)
 
-# --- Event Handlers --------
-@client.event
-async def on_ready():
-    await ready_hook.handle(client)
+bot = GLBot()
 
-@client.event
-async def on_message(message: discord.Message):
-    await message_hook.handle(client, message)
 
-@client.event
-async def on_reaction_add(reaction: discord.Reaction, user: discord.User):
-    await reaction_hook.handle(client, reaction, user)
+@bot.event
+async def on_ready() -> None:
+    await ready_hook.handle(bot)
 
-def run():
-    """
-    Start the Discord client with configured token.
-    """
+
+@bot.event
+async def on_message(message: discord.Message) -> None:
+    await message_hook.handle(bot, message)
+
+
+@bot.event
+async def on_reaction_add(reaction: discord.Reaction, user: discord.User) -> None:
+    await reaction_hook.handle(bot, reaction, user)
+
+
+def run() -> None:
+    """Start the Discord bot using configuration from the environment."""
+
     if not core.DISCORD_API_TOKEN:
-        logger.error("No DISCORD_TOKEN configured. Cannot run client.")
+        logger.error("No DISCORD_API_TOKEN configured. Cannot run client.")
         return
 
     try:
-        client.run(core.DISCORD_API_TOKEN)
-    except discord.LoginFailure as e:
-        logger.error(f"Login failed: {e}")
-    except Exception as e:
-        logger.exception(f"Unexpected error while running client: {e}")
+        bot.run(core.DISCORD_API_TOKEN)
+    except discord.LoginFailure as exc:
+        logger.error("Login failed: %s", exc)
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.exception("Unexpected error while running client: %s", exc)

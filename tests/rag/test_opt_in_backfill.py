@@ -2,7 +2,7 @@ import asyncio
 import datetime
 from types import SimpleNamespace
 
-from gregg_limper.commands.handlers.rag_opt import RagOptInCommand
+from gregg_limper.commands.handlers.rag_opt import RagOpt
 from gregg_limper.config import core as core_cfg
 
 
@@ -30,6 +30,33 @@ class FakeChannel:
                 yield m
 
         return gen()
+
+
+class FakeResponse:
+    def __init__(self, channel):
+        self._channel = channel
+
+    async def send_message(self, content, **kwargs):
+        self._channel.sent.append(content)
+
+
+class FakeFollowUp:
+    def __init__(self, channel):
+        self._channel = channel
+
+    async def send(self, content, **kwargs):
+        self._channel.sent.append(content)
+
+
+class FakeInteraction(SimpleNamespace):
+    def __init__(self, user, guild, channel):
+        super().__init__(
+            user=user,
+            guild=guild,
+            channel=channel,
+            response=FakeResponse(channel),
+            followup=FakeFollowUp(channel),
+        )
 
 
 def run(coro):
@@ -85,7 +112,7 @@ def test_backfill(monkeypatch):
     guild.text_channels = [ch1, ch2]
 
     cmd_channel = FakeChannel(99, guild)
-    cmd_msg = FakeMessage(id=999, author=user, guild=guild, channel=cmd_channel)
+    interaction = FakeInteraction(user=user, guild=guild, channel=cmd_channel)
 
     existing = {104}
     processed = []
@@ -101,15 +128,14 @@ def test_backfill(monkeypatch):
             ingested.append(message.id)
         return {"message_id": message.id}, did_ingest
 
-    monkeypatch.setattr(
-        "gregg_limper.memory.rag.consent.add_user", fake_add_user
-    )
+    monkeypatch.setattr("gregg_limper.memory.rag.consent.add_user", fake_add_user)
     monkeypatch.setattr(
         "gregg_limper.commands.handlers.rag_opt.process_message_for_rag",
         fake_process_message_for_rag,
     )
 
-    run(RagOptInCommand.handle(None, cmd_msg, ""))
+    rag_cog = RagOpt(bot=SimpleNamespace())
+    run(rag_cog.rag_opt_in.callback(rag_cog, interaction))
 
     assert processed == [(101, 1), (104, 2)]
     assert ingested == [101]
@@ -140,14 +166,7 @@ def test_backfill_skips_command_messages(monkeypatch):
     guild.text_channels = [ch1]
 
     cmd_channel = FakeChannel(99, guild)
-    cmd_msg = FakeMessage(
-        id=999,
-        author=user,
-        guild=guild,
-        channel=cmd_channel,
-        mentions=[bot_user],
-        content="/rag_opt_in",
-    )
+    interaction = FakeInteraction(user=user, guild=guild, channel=cmd_channel)
 
     processed = []
 
@@ -158,17 +177,15 @@ def test_backfill_skips_command_messages(monkeypatch):
         processed.append((message.id, channel_id))
         return {"message_id": message.id}, False
 
-    monkeypatch.setattr(
-        "gregg_limper.memory.rag.consent.add_user", fake_add_user
-    )
+    monkeypatch.setattr("gregg_limper.memory.rag.consent.add_user", fake_add_user)
     monkeypatch.setattr(
         "gregg_limper.commands.handlers.rag_opt.process_message_for_rag",
         fake_process_message_for_rag,
     )
 
-    run(RagOptInCommand.handle(None, cmd_msg, ""))
+    rag_cog = RagOpt(bot=SimpleNamespace())
+    run(rag_cog.rag_opt_in.callback(rag_cog, interaction))
 
     assert processed == [(201, 1)]
     assert cmd_channel.sent[0] == "Opted in to RAG. Backfill queued."
     assert cmd_channel.sent[-1].startswith("Backfill complete")
-

@@ -16,7 +16,6 @@ from typing import List, TYPE_CHECKING
 
 from discord import Client, Message, TextChannel
 
-from gregg_limper import commands
 from gregg_limper.config import cache
 
 from .formatting import format_missing_messages
@@ -58,19 +57,8 @@ class CacheInitializer:
 
             # Discord yields newest-first; reverse so append order matches live traffic.
             fetched: List[Message] = list(reversed(history))
-            
-            # Drop command invocations so cache rehydration mirrors live filtering.
             bot_user = getattr(client, "user", None)
-            messages = [
-                message
-                for message in fetched
-                if not commands.is_command_message(
-                    message, bot_user=bot_user
-                )
-                and not commands.is_command_feedback(
-                    message, bot_user=bot_user
-                )
-            ]
+            messages = fetched
 
             # Only schedule formatter work for ids missing from the memo store.
             formatted_missing = await format_missing_messages(

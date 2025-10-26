@@ -1,37 +1,39 @@
-import discord
-from gregg_limper.memory.cache import GLCache
-from gregg_limper import commands
-from gregg_limper.config import core
-from gregg_limper import response
 import json
 
 import logging
+
+import discord
+
+from gregg_limper.config import core
+from gregg_limper.memory.cache import GLCache
+from gregg_limper import response
 
 logger = logging.getLogger(__name__)
 
 # TODO: SEE TODO IN response/prompt.py ABOUT BETTER HANDLING SEMANTIC SEARCH
 
 async def handle(client: discord.Client, message: discord.Message):
-    """
-    Handle incoming discord messages.
-    - client: Discord bot client instance
-    - message: The incoming message object
-    """
-    # 1) Is message in allowed channel?
+    """Handle incoming Discord messages."""
+
+    # 1) Ignore channels that are not configured for processing
     if message.channel.id not in core.CHANNEL_IDS:
         return
 
+    channel_name = getattr(message.channel, "name", None) or getattr(
+        message.channel, "recipient", None
+    )
+    if channel_name is None:
+        channel_name = message.channel.__class__.__name__
+
     logger.info(
-        f"New message received in channel {message.channel.name} (ID: {message.channel.id})"
+        "New message received in channel %s (ID: %s)",
+        channel_name,
+        getattr(message.channel, "id", "unknown"),
     )
     bot_user = client.user
     bot_mentioned = bot_user in message.mentions if bot_user else False
 
-    # 2) Parse the message for commands (e.g. @bot /lobotomy, /help, etc.)
-    if bot_mentioned and await commands.dispatch(client, message):
-        return
-    
-    # 3) Add message to cache
+    # 2) Add message to cache
     # NOTE: The add message pipeline automatically handles formatting and ingestion.
     # It will skip commands and feedback messages.
     cache = GLCache()  # Singleton instance
@@ -49,7 +51,7 @@ async def handle(client: discord.Client, message: discord.Message):
             f"Cached message: {m_str[:100]}..."
         )  # Log first 100 chars for brevity
 
-    # 4) Start response pipeline if bot is mentioned
+    # 3) Start response pipeline if bot is mentioned
     if not bot_mentioned:
         return
 

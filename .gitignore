@@ -8,8 +8,9 @@ test.py
 *.db-wal
 *.db-shm
 *.sqlite
-src/gregg_limper/memory/cache/data/
+data/
 prompt.md
-debug_sys_prompt.md
 debug_history.md
+debug_context.md
+debug_messages.json
 *.egg-info/

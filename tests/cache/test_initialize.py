@@ -263,4 +263,5 @@ def test_initialize_skips_command_and_feedback(monkeypatch):
     asyncio.run(cache_inst.initialize(client, [1]))
 
     stored_ids = [m.id for m in cache_inst._states[1].messages]
-    assert stored_ids == [1, 4]
+    # All messages, including command text, are retained during hydration.
+    assert stored_ids == [1, 2, 3, 4]

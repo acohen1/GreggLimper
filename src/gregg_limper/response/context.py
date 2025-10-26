@@ -207,7 +207,7 @@ async def _map_author_display_names(
     author_names: dict[int, str] = {}
     for author_id in author_ids:
         try:
-            user = await disc.client.fetch_user(author_id)
+            user = await disc.bot.fetch_user(author_id)
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning(
                 "Failed to fetch author %s display name: %s", author_id, exc
@@ -225,4 +225,3 @@ def _fallback_author_name(author_id: Any) -> str:
 
 
 __all__ = ["ConversationContext", "gather_context"]
-

@@ -1,120 +1,79 @@
-"""Command dispatch utilities."""
+"""Slash command registration helpers."""
 
 from __future__ import annotations
 
 import logging
-import re
-from typing import NamedTuple
+from importlib import import_module
+from pathlib import Path
+from pkgutil import iter_modules
+from typing import List, Optional, Type
 
-import discord
-from discord.abc import User
-
-from .handlers import CommandHandler, get as get_handler, feedback_matchers
+from discord.ext import commands as commands_ext
 
 logger = logging.getLogger(__name__)
 
-_COMMAND_RE = re.compile(r"/(\w+)(?:\s+(.*))?")
+_COG_CLASSES: List[Type[commands_ext.Cog]] = []
+_DISCOVERED = False
 
 
-class CommandInvocation(NamedTuple):
-    """Resolved command data for downstream consumers."""
-
-    handler: CommandHandler
-    name: str
-    args: str
-
-
-def _resolve_command(content: str) -> CommandInvocation | None:
-    """Return the handler, command name, and args if ``content`` matches."""
-
-    match = _COMMAND_RE.search(content)
-    if not match:
-        return None
-
-    command, args = match.groups()
-    command = (command or "").lower()
-    handler = get_handler(command)
-    if not handler:
-        return None
-
-    return CommandInvocation(handler=handler, name=command, args=(args or ""))
-
-
-async def dispatch(client: discord.Client, message: discord.Message) -> bool:
+def register_cog(cls: Optional[Type[commands_ext.Cog]] = None):
     """
-    Parse and execute the first slash-style command in the message.
-    Returns True if a command was handled.
+    Register a Cog class for later attachment to the bot.
+
+    Modules should decorate their Cog classes with ``@register_cog`` so they are
+    attached automatically during :func:`setup`.
     """
 
-    invocation = _resolve_command(message.content or "")
-    if not invocation:
-        return False
+    def _register(cog_cls: Type[commands_ext.Cog]):
+        if not issubclass(cog_cls, commands_ext.Cog):
+            raise TypeError("register_cog expects a discord.ext.commands.Cog subclass")
 
-    handler, command, args = invocation
-    logger.info("Dispatching command '%s' with args: %s", command, args)
-    await handler.handle(client, message, args)
-    return True
+        _COG_CLASSES.append(cog_cls)
+        return cog_cls
 
-
-def is_command_message(
-    message: discord.Message,
-    bot_user: User | None = None,
-    mentioned: bool | None = None,
-) -> bool:
-    """Return ``True`` when ``message`` targets the bot with a registered command."""
-
-    if not message:
-        return False
-
-    if mentioned is None:
-        if bot_user is None:
-            guild = getattr(message, "guild", None)
-            bot_user = getattr(guild, "me", None) if guild else None
-        if bot_user is None:
-            mentioned = False
-        else:
-            mentions = getattr(message, "mentions", []) or []
-            mentioned = bot_user in mentions
-
-    if not mentioned:
-        return False
-
-    return _resolve_command(message.content or "") is not None
+    if cls is None:
+        return _register
+    return _register(cls)
 
 
-def is_command_feedback(
-    message: discord.Message, bot_user: User | None = None
-) -> bool:
-    """Return ``True`` when ``message`` is canned command feedback from the bot."""
+def _discover_handlers() -> None:
+    """Import handler modules once so they can register their cogs."""
 
-    if not message:
-        return False
+    global _DISCOVERED
+    if _DISCOVERED:
+        return
 
-    author = getattr(message, "author", None)
-    if author is None:
-        return False
+    pkg_path = Path(__file__).resolve().parent / "handlers"
+    for _, modname, _ in iter_modules([str(pkg_path)]):
+        if modname.startswith("_"):
+            continue
+        import_module(f"{__name__}.handlers.{modname}")
 
-    if bot_user is None:
-        guild = getattr(message, "guild", None)
-        bot_user = getattr(guild, "me", None) if guild else None
+    _DISCOVERED = True
 
-    if bot_user is not None:
-        if getattr(author, "id", None) != getattr(bot_user, "id", None):
-            return False
-    elif not getattr(author, "bot", False):
-        return False
 
-    content = getattr(message, "content", None)
-    if not content:
-        return False
+async def setup(bot: commands_ext.Bot) -> None:
+    """
+    Attach registered cogs to ``bot``.
 
-    for command_name, matcher in feedback_matchers().items():
-        try:
-            if matcher(message):
-                return True
-        except Exception:  # pragma: no cover - defensive guard
-            logger.exception(
-                "Feedback matcher for command '%s' raised an exception", command_name
-            )
+    This must be invoked during the bot setup phase (typically inside
+    ``commands.Bot.setup_hook``).
+    """
 
-    return False
+    _discover_handlers()
+
+    for cog_cls in _COG_CLASSES:
+        if bot.get_cog(cog_cls.__name__):
+            continue
+        await bot.add_cog(cog_cls(bot))
+
+    if _COG_CLASSES:
+        logger.info("Registered %d command cog(s)", len(_COG_CLASSES))
+    else:
+        logger.warning("No command cogs discovered; command tree is empty")
+
+
+__all__ = [
+    "register_cog",
+    "setup",
+]
