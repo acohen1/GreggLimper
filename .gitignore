@@ -12,3 +12,4 @@ src/gregg_limper/memory/cache/data/
 prompt.md
 debug_sys_prompt.md
 debug_history.md
+*.egg-info/
