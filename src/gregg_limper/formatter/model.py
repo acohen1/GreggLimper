@@ -40,6 +40,18 @@ class Fragment:
     description: Optional[str] = None
     url: Optional[str] = None
 
+    def to_markdown(self) -> str:
+        """Render the fragment as a concise Markdown bullet."""
+
+        parts = [f"- **{self.type}**"]
+        if self.title:
+            parts.append(f": {self.title}")
+        if self.description:
+            parts.append(f" – {self.description}")
+        if self.url:
+            parts.append(f" ([link]({self.url}))")
+        return "".join(parts)
+
     def to_dict(self) -> Dict[str, Any]:
         base = {
             "type": self.type,
@@ -75,6 +87,17 @@ class TextFragment(Fragment):
     type: Literal["text"] = "text"
     # description holds the body text
 
+    def to_markdown(self) -> str:
+        body = (self.description or "").strip()
+        if len(body) > 160:
+            body = f"{body[:157]}…"
+        parts = [f"- **{self.type}**"]
+        if body:
+            parts.append(f": {body}")
+        if self.url:
+            parts.append(f" ([link]({self.url}))")
+        return "".join(parts)
+
 
 @dataclass(slots=True)
 class ImageFragment(Fragment):
@@ -83,6 +106,21 @@ class ImageFragment(Fragment):
     type: Literal["image"] = "image"
     caption: str = ""
     thumbnail_url: Optional[str] = None
+
+    def to_markdown(self) -> str:
+        parts = [f"- **{self.type}**"]
+        if self.title:
+            parts.append(f": {self.title}")
+        caption = (self.caption or "").strip()
+        if caption:
+            parts.append(f" – {caption}")
+        elif self.description:
+            parts.append(f" – {self.description}")
+        if self.url:
+            parts.append(f" ([image]({self.url}))")
+        elif self.thumbnail_url:
+            parts.append(f" ([preview]({self.thumbnail_url}))")
+        return "".join(parts)
 
     def to_dict(self) -> Dict[str, Any]:
         base = Fragment.to_dict(self)
@@ -105,6 +143,19 @@ class GIFFragment(Fragment):
     type: Literal["gif"] = "gif"
     caption: str = ""
     thumbnail_url: Optional[str] = None
+
+    def to_markdown(self) -> str:
+        parts = [f"- **{self.type}**"]
+        if self.title:
+            parts.append(f": {self.title}")
+        caption = (self.caption or "").strip()
+        if caption:
+            parts.append(f" – {caption}")
+        if self.url:
+            parts.append(f" ([gif]({self.url}))")
+        elif self.thumbnail_url:
+            parts.append(f" ([preview]({self.thumbnail_url}))")
+        return "".join(parts)
 
     def to_dict(self) -> Dict[str, Any]:
         base = Fragment.to_dict(self)
@@ -129,6 +180,40 @@ class YouTubeFragment(Fragment):
     thumbnail_caption: Optional[str] = None
     channel: Optional[str] = None
     duration: Optional[int] = None
+
+    def _format_duration(self) -> str | None:
+        if not self.duration:
+            return None
+        seconds = max(self.duration, 0)
+        minutes, sec = divmod(seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        if hours:
+            return f"{hours:d}:{minutes:02d}:{sec:02d}"
+        return f"{minutes:d}:{sec:02d}"
+
+    def to_markdown(self) -> str:
+        parts = [f"- **{self.type}**"]
+        if self.title:
+            parts.append(f": {self.title}")
+        elif self.description:
+            parts.append(f": {self.description}")
+
+        details: list[str] = []
+        if self.channel:
+            details.append(f"channel {self.channel}")
+        duration = self._format_duration()
+        if duration:
+            details.append(f"{duration}")
+        if details:
+            parts.append(f" ({', '.join(details)})")
+
+        if self.thumbnail_caption:
+            parts.append(f" – {self.thumbnail_caption}")
+        if self.url:
+            parts.append(f" ([watch]({self.url}))")
+        elif self.thumbnail_url:
+            parts.append(f" ([preview]({self.thumbnail_url}))")
+        return "".join(parts)
 
     def to_dict(self) -> Dict[str, Any]:
         base = Fragment.to_dict(self)
@@ -168,6 +253,21 @@ class LinkFragment(Fragment):
     site_name: Optional[str] = None
     thumbnail_url: Optional[str] = None
     thumbnail_caption: Optional[str] = None
+
+    def to_markdown(self) -> str:
+        parts = [f"- **{self.type}**"]
+        headline = self.title or self.url
+        if headline:
+            parts.append(f": {headline}")
+        if self.description:
+            parts.append(f" – {self.description}")
+        if self.site_name:
+            parts.append(f" ({self.site_name})")
+        if self.url:
+            parts.append(f" ([link]({self.url}))")
+        elif self.thumbnail_url:
+            parts.append(f" ([preview]({self.thumbnail_url}))")
+        return "".join(parts)
 
     def to_dict(self) -> Dict[str, Any]:
         base = Fragment.to_dict(self)

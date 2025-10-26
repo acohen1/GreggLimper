@@ -66,12 +66,24 @@ def test_text_handler_ignores_bot_ping_only():
 
 
 def test_text_handler_replaces_mentions():
-    mention = SimpleNamespace(id=999, display_name="Gregg")
+    mention = SimpleNamespace(id=123, display_name="Gregg")
     bot = SimpleNamespace(id=999, display_name="Gregg", name="Gregg")
-    msg = make_message("Hey <@999> what's up", mentions=[mention], guild_me=bot)
+    msg = make_message("Hey <@123> what's up", mentions=[mention], guild_me=bot)
 
     result = asyncio.run(format_message(msg))
     fragments = result["fragments"]
     assert len(fragments) == 1
     assert isinstance(fragments[0], TextFragment)
     assert fragments[0].description == "Hey Gregg what's up"
+
+
+def test_text_handler_drops_bot_mentions_from_text():
+    mention = SimpleNamespace(id=999, display_name="Gregg")
+    bot = SimpleNamespace(id=999, display_name="Gregg", name="Gregg")
+    msg = make_message("<@999> do you remember the price?", mentions=[mention], guild_me=bot)
+
+    result = asyncio.run(format_message(msg))
+    fragments = result["fragments"]
+    assert len(fragments) == 1
+    assert isinstance(fragments[0], TextFragment)
+    assert fragments[0].description == "do you remember the price?"
