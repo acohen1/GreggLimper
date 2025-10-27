@@ -100,40 +100,41 @@ class RagOpt(commands.Cog):
         self.bot = bot
 
     @app_commands.command(
-        name="rag_opt_in",
-        description="Opt in to knowledge retention and queue a history backfill.",
+        name="optin",
+        description="Enable or disable knowledge retention for your messages.",
     )
-    async def rag_opt_in(self, interaction: discord.Interaction) -> None:
-        """Opt the caller into RAG and trigger historical backfill."""
+    @app_commands.describe(
+        enabled="Set to True to opt in (with backfill) or False to opt out and purge."
+    )
+    async def optin(
+        self, interaction: discord.Interaction, enabled: bool
+    ) -> None:
+        """Toggle the caller's RAG opt-in state and coordinate related work."""
 
-        added = await consent.add_user(interaction.user.id)
-        if not added:
+        if enabled:
+            added = await consent.add_user(interaction.user.id)
+            if not added:
+                await interaction.response.send_message(
+                    "Already opted in.", ephemeral=True
+                )
+                return
+
             await interaction.response.send_message(
-                "Already opted in.", ephemeral=True
+                "Opted in to RAG. Backfill queued.", ephemeral=True
             )
+
+            async def _backfill_and_notify() -> None:
+                processed = await _backfill_user_messages(
+                    interaction.user, interaction.guild
+                )
+                await interaction.followup.send(
+                    f"Backfill complete. Ingested {processed} messages.",
+                    ephemeral=True,
+                )
+
+            task = asyncio.create_task(_backfill_and_notify())
+            task.add_done_callback(_log_background_task)
             return
-
-        await interaction.response.send_message(
-            "Opted in to RAG. Backfill queued.", ephemeral=True
-        )
-
-        async def _backfill_and_notify() -> None:
-            processed = await _backfill_user_messages(
-                interaction.user, interaction.guild
-            )
-            await interaction.followup.send(
-                f"Backfill complete. Ingested {processed} messages.", ephemeral=True
-            )
-
-        task = asyncio.create_task(_backfill_and_notify())
-        task.add_done_callback(_log_background_task)
-
-    @app_commands.command(
-        name="rag_opt_out",
-        description="Opt out of knowledge retention and purge stored data.",
-    )
-    async def rag_opt_out(self, interaction: discord.Interaction) -> None:
-        """Remove caller from consent registry and purge their data."""
 
         await consent.remove_user(interaction.user.id)
         await purge_user(interaction.user.id)

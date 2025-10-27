@@ -135,7 +135,7 @@ def test_backfill(monkeypatch):
     )
 
     rag_cog = RagOpt(bot=SimpleNamespace())
-    run(rag_cog.rag_opt_in.callback(rag_cog, interaction))
+    run(rag_cog.optin.callback(rag_cog, interaction, True))
 
     assert processed == [(101, 1), (104, 2)]
     assert ingested == [101]
@@ -157,7 +157,7 @@ def test_backfill_skips_command_messages(monkeypatch):
         author=user,
         guild=guild,
         created_at=now - datetime.timedelta(hours=1),
-        content="/rag_opt_in",
+        content="/optin enabled:True",
         mentions=[bot_user],
     )
 
@@ -184,7 +184,7 @@ def test_backfill_skips_command_messages(monkeypatch):
     )
 
     rag_cog = RagOpt(bot=SimpleNamespace())
-    run(rag_cog.rag_opt_in.callback(rag_cog, interaction))
+    run(rag_cog.optin.callback(rag_cog, interaction, True))
 
     assert processed == [(201, 1)]
     assert cmd_channel.sent[0] == "Opted in to RAG. Backfill queued."

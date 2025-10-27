@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 async def handle(client: discord.Client, message: discord.Message):
     """Handle incoming Discord messages."""
 
+    # Slash command follow-ups (and true DMs) arrive without guild context; skip them.
+    if message.guild is None or getattr(getattr(message, "flags", None), "ephemeral", False):
+        logger.debug("Skipping non-guild or ephemeral message %s", message.id)
+        return
+
     # 1) Ignore channels that are not configured for processing
     if message.channel.id not in core.CHANNEL_IDS:
         return

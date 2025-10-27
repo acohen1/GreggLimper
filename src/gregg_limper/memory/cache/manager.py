@@ -78,6 +78,12 @@ class GLCache:
         :param cache_msg: Precomputed memo record to store instead of formatting ``message_obj``.
         :return: ``None``. The internal cache state and memo store are updated in-place.
         """
+        if getattr(message_obj, "guild", None) is None:
+            logger.debug(
+                "Skipping cache ingest for message %s without guild context",
+                getattr(message_obj, "id", "unknown"),
+            )
+            return
 
         state = self._get_state(channel_id)
         msg_id = message_obj.id

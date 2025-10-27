@@ -118,7 +118,7 @@ def test_commands_skipped_from_ingest(monkeypatch):
         author=user,
         guild=SimpleNamespace(id=1),
         created_at=datetime.datetime.fromtimestamp(0, datetime.UTC),
-        content="/rag_opt_in",
+        content="/optin enabled:True",
         mentions=[bot_user],
     )
 
