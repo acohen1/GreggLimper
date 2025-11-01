@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from gregg_limper.memory.rag import embeddings
-from gregg_limper.config import rag
+from gregg_limper.config import rag, milvus
 from gregg_limper.memory.rag.vector import vector_index
 
 
@@ -63,6 +63,7 @@ def test_vector_upsert_and_search(monkeypatch):
     monkeypatch.setattr(vector_index, "_collection", fake)
     monkeypatch.setattr(vector_index, "_get_collection", lambda: fake)
     monkeypatch.setattr(embeddings, "embed_text", fake_embed_text)
+    monkeypatch.setattr(milvus, "ENABLE_MILVUS", True, raising=False)
 
     vec = asyncio.run(embeddings.embed("hello"))
     asyncio.run(vector_index.upsert(5, 1, 2, vec))
@@ -76,10 +77,10 @@ def test_upsert_many(monkeypatch):
     monkeypatch.setattr(vector_index, "_collection", fake)
     monkeypatch.setattr(vector_index, "_get_collection", lambda: fake)
     monkeypatch.setattr(embeddings, "embed_text", fake_embed_text)
+    monkeypatch.setattr(milvus, "ENABLE_MILVUS", True, raising=False)
 
     vec = asyncio.run(embeddings.embed("hello"))
     items = [(1, 1, 2, vec), (2, 1, 2, vec)]
     asyncio.run(vector_index.upsert_many(items))
     results = asyncio.run(vector_index.search(1, 2, vec, k=2))
     assert {r for r, _ in results} == {1, 2}
-

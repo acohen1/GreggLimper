@@ -4,7 +4,7 @@ import numpy as np
 
 from gregg_limper.memory.rag import ingest
 from gregg_limper.formatter.model import TextFragment, ImageFragment, GIFFragment, LinkFragment, YouTubeFragment
-from gregg_limper.config import rag
+from gregg_limper.config import rag, milvus
 
 
 class DummyRepo:
@@ -43,6 +43,7 @@ def test_project_and_upsert(monkeypatch):
     }
     monkeypatch.setattr(ingest, "embed", fake_embed)
     monkeypatch.setattr(ingest.vector_index, "upsert", fake_upsert)
+    monkeypatch.setattr(milvus, "ENABLE_MILVUS", True, raising=False)
 
     asyncio.run(
         ingest.project_and_upsert(

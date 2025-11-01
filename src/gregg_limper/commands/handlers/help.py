@@ -1,31 +1,27 @@
 from __future__ import annotations
+
 import discord
-from . import register, all_commands
+from discord import app_commands
+from discord.ext import commands
+
+from .. import register_cog
 
 
-@register
-class HelpCommand:
+@register_cog
+class Help(commands.Cog):
     """List available slash commands."""
 
-    command_str = "help"
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
 
-    @staticmethod
-    def match_feedback(message: discord.Message) -> bool:
-        """Identify canned feedback emitted by the help command."""
-
-        content = (message.content or "").strip()
-        return content.startswith("Available commands:")
-
-    @staticmethod
-    async def handle(
-        client: discord.Client, message: discord.Message, args: str
-    ) -> None:
+    @app_commands.command(name="help", description="List available slash commands.")
+    async def help(self, interaction: discord.Interaction) -> None:
         """
-        Send a comma-separated list of registered commands.
-
-        :param client: Discord client instance (unused).
-        :param message: Incoming command message.
-        :param args: Raw argument string (unused).
+        Send a comma-separated list of registered slash commands to the caller.
         """
-        cmds = ", ".join(sorted(all_commands().keys()))
-        await message.channel.send(f"Available commands: {cmds}")
+
+        command_names = sorted(cmd.name for cmd in self.bot.tree.get_commands())
+        listing = ", ".join(command_names) if command_names else "None registered"
+        await interaction.response.send_message(
+            f"Available commands: {listing}", ephemeral=True
+        )

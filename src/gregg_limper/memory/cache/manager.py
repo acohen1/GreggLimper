@@ -22,8 +22,6 @@ from discord.abc import User
 
 from gregg_limper.config import cache
 
-from gregg_limper import commands
-
 from .core import process_message_for_rag
 from .channel_state import ChannelCacheState
 from .initializer import CacheInitializer
@@ -80,6 +78,12 @@ class GLCache:
         :param cache_msg: Precomputed memo record to store instead of formatting ``message_obj``.
         :return: ``None``. The internal cache state and memo store are updated in-place.
         """
+        if getattr(message_obj, "guild", None) is None:
+            logger.debug(
+                "Skipping cache ingest for message %s without guild context",
+                getattr(message_obj, "id", "unknown"),
+            )
+            return
 
         state = self._get_state(channel_id)
         msg_id = message_obj.id
@@ -93,21 +97,6 @@ class GLCache:
             self._memo_store.delete(evicted_id)
 
         bot_user = bot_user or getattr(getattr(message_obj, "guild", None), "me", None)
-
-        skip_rag = commands.is_command_message(
-            message_obj, bot_user=bot_user
-        ) or commands.is_command_feedback(message_obj, bot_user=bot_user)
-
-        if skip_rag:
-            if memo_present:
-                self._memo_store.delete(msg_id)
-            if evicted_id is not None or memo_present:
-                self._memo_store.save_channel_snapshot(channel_id, state.message_ids())
-            logger.info(
-                "Skipped cache memo persistence and RAG ingestion for command message %s",
-                msg_id,
-            )
-            return
 
         record, _ = await process_message_for_rag(
             message_obj,

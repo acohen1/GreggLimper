@@ -107,6 +107,10 @@ def test_commands_skipped_from_ingest(monkeypatch):
         return False
 
     monkeypatch.setattr(rag, "message_exists", fake_message_exists)
+    async def consent_true(_uid):
+        return True
+
+    monkeypatch.setattr(consent_mod, "is_opted_in", consent_true)
 
     user = SimpleNamespace(id=123, display_name="user", bot=False)
     command_msg = SimpleNamespace(
@@ -114,16 +118,18 @@ def test_commands_skipped_from_ingest(monkeypatch):
         author=user,
         guild=SimpleNamespace(id=1),
         created_at=datetime.datetime.fromtimestamp(0, datetime.UTC),
-        content="/rag_opt_in",
+        content="/optin enabled:True",
         mentions=[bot_user],
     )
 
     asyncio.run(gc.add_message(1, command_msg, ingest=True, bot_user=bot_user))
 
-    assert fake_format_message.called is False
-    assert fake_ingest.called is False
-    assert message_exists_calls == []
-    assert gc._memo_store.has(command_msg.id) is False
+    assert fake_format_message.called is True
+    assert fake_ingest.called is True
+    assert message_exists_calls == [command_msg.id]
+    assert gc._memo_store.has(command_msg.id) is True
+
+    message_exists_calls.clear()
 
     fake_format_message.called = False
     fake_ingest.called = False
@@ -139,7 +145,7 @@ def test_commands_skipped_from_ingest(monkeypatch):
 
     asyncio.run(gc.add_message(1, feedback_msg, ingest=True, bot_user=bot_user))
 
-    assert fake_format_message.called is False
-    assert fake_ingest.called is False
-    assert message_exists_calls == []
-    assert gc._memo_store.has(feedback_msg.id) is False
+    assert fake_format_message.called is True
+    assert fake_ingest.called is True
+    assert message_exists_calls == [feedback_msg.id]
+    assert gc._memo_store.has(feedback_msg.id) is True

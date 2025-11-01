@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 import types, sys
 
-from gregg_limper.config import rag
+from gregg_limper.config import rag, milvus
 
 # Provide a stub pymilvus module before importing vector components
 pymilvus_stub = types.SimpleNamespace(
@@ -58,13 +58,24 @@ def _insert_fragment(conn, content: str) -> None:
         )
 
 
+SCHEMA_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "src"
+    / "gregg_limper"
+    / "memory"
+    / "rag"
+    / "sql"
+    / "schema.sql"
+)
+
+
 def _make_conn():
     conn = sqlite3.connect(
         ":memory:", isolation_level=None, check_same_thread=False,
         detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
     )
     conn.row_factory = sqlite3.Row
-    schema = (Path(__file__).resolve().parents[3] / "gregg_limper/memory/rag/sql/schema.sql").read_text()
+    schema = SCHEMA_PATH.read_text()
     conn.executescript(schema)
     return conn
 
@@ -113,6 +124,7 @@ def test_vector_maintenance_startup_and_periodic(monkeypatch):
     monkeypatch.setattr(vector_index, "delete_many", fake_delete_many)
     monkeypatch.setattr(vector_index, "flush", fake_flush)
     monkeypatch.setattr(vector_index, "_get_collection", lambda: fake_col)
+    monkeypatch.setattr(milvus, "ENABLE_MILVUS", True, raising=False)
 
     async def _no_sql(conn, lock):
         return None
@@ -136,4 +148,3 @@ def test_vector_maintenance_startup_and_periodic(monkeypatch):
     assert flushes  # flush called
     assert not deletes  # no deletions in this scenario
     assert fake_col.compacts > 0  # compaction performed
-

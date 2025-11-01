@@ -24,8 +24,6 @@ def test_backfill_matches_live_ingestion(monkeypatch):
     monkeypatch.setattr(core_cfg, "CHANNEL_IDS", [1])
     monkeypatch.setattr(memo, "save", lambda *_, **__: None)
     monkeypatch.setattr(memo, "prune", lambda _channel_id, memo_dict: memo_dict)
-    monkeypatch.setattr("gregg_limper.commands.is_command_message", lambda *_, **__: False)
-    monkeypatch.setattr("gregg_limper.commands.is_command_feedback", lambda *_, **__: False)
 
     async def fake_is_opted_in(user_id: int) -> bool:
         return user_id == 1
