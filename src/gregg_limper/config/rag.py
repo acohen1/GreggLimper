@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 _DEFAULT_SQLITE_PATH = (
-    Path(__file__).resolve().parent.parent / "memory" / "rag" / "sql" / "memory.db"
+    Path(__file__).resolve().parent.parent.parent / "data" / "memory.db"
 )
 
 

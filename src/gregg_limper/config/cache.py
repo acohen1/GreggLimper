@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 
-_DEFAULT_MEMO_DIR = Path(__file__).resolve().parent.parent / "memory" / "cache" / "data"
+_DEFAULT_MEMO_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "cache"
 
 
 @dataclass
