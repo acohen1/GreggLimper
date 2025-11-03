@@ -1,6 +1,5 @@
-from __future__ import annotations
-
-"""Dataclass models for formatter fragments.
+"""
+Dataclass models for formatter fragments.
 
 Fragment schema (output of :meth:`Fragment.to_dict`):
 
@@ -18,6 +17,7 @@ extras. Objects keep only non-``None`` attributes when serialized. ``id`` is a
 stable identifier assigned during composition.
 """
 
+from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, Literal, Dict, Any
 

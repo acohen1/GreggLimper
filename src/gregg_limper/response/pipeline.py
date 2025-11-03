@@ -8,6 +8,7 @@ from typing import List
 from discord import Message
 
 from gregg_limper.config import core
+from gregg_limper.tools import build_tool_prompt, get_registered_tool_specs
 
 from .context import ConversationContext, gather_context
 from .context_messages import build_context_messages
@@ -37,8 +38,11 @@ async def build_prompt_payload(message: Message) -> PromptPayload:
     messages: list[dict[str, str]] = [
         {"role": "system", "content": get_system_prompt()}
     ]
+
+    tool_specs = get_registered_tool_specs()
+    if tool_specs:
+        messages.append({"role": "assistant", "content": build_tool_prompt(tool_specs)})
     messages.extend(build_context_messages(context))
     messages.extend(history.messages)
 
     return PromptPayload(messages=messages, history=history, context=context)
-
