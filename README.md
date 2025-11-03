@@ -20,6 +20,7 @@ Discord assistant for knowledge retrieval and response generation. Gregg Limper 
   - [Run the Test Suite](#run-the-test-suite)
 - [Slash Commands](#slash-commands)
 - [Configuration Reference](#configuration-reference)
+- [Handler Registries](#handler-registries)
 - [Development Notes](#development-notes)
 - [Troubleshooting & Debugging](#troubleshooting--debugging)
 - [Further Reading](#further-reading)
@@ -228,15 +229,43 @@ Additional commands can be added by creating new handlers under `src/gregg_limpe
 | `LOCAL_MODEL_ID` | `gpt-oss-20b` | Ollama model identifier. |
 | `LOCAL_SERVER_URL` | `http://localhost:11434` | Ollama server address. |
 
+## Handler Registries
+
+Formatter handlers, command cogs, and tool handlers all follow the same pattern:
+modules live under a dedicated ``handlers`` package, decorate their class with
+the package’s registration helper, and are auto-imported at module import time.
+The tables below highlight the specifics for each subsystem.
+
+### Formatter Handlers
+| Item | Location / Notes |
+| --- | --- |
+| Directory | `src/gregg_limper/formatter/handlers/` |
+| Decorator | `formatter.handlers.register` |
+| Runtime API | `formatter.handlers.get(media_type)` |
+| When adding | Update `formatter/composer.py`’s `ORDER`, teach `formatter/classifier.py` how to populate the slice, and ensure the corresponding `Fragment` class implements `content_text` for RAG ingestion (see `src/gregg_limper/formatter/handlers/__init__.py`). |
+
+### Command Cogs
+| Item | Location / Notes |
+| --- | --- |
+| Directory | `src/gregg_limper/commands/handlers/` |
+| Decorator | `commands.register_cog` |
+| Runtime API | `commands.setup(bot)` attaches every registered cog |
+| When adding | Provide any Discord slash command definitions within the Cog, note that modules are imported eagerly, and run the bot (or `pytest tests/test_commands_setup.py`) to validate registration (see `src/gregg_limper/commands/__init__.py`). |
+
+### Tool Handlers
+| Item | Location / Notes |
+| --- | --- |
+| Directory | `src/gregg_limper/tools/handlers/` |
+| Decorator | `tools.register_tool` |
+| Runtime API | `tools.get_registered_tool_specs()` / `tools.get_tool_entry(name)` |
+| When adding | Return a `ToolResult` from `run`, add or update tests in `tests/tools/`, consider logging/timeout behaviour, and document new configuration knobs if needed (see `src/gregg_limper/tools/__init__.py`). |
+
 ## Development Notes
 
 - **Cache persistence:** Memo snapshots live under `MEMO_DIR` (default `memory/cache/data`). Deleting the files will force the formatter to regenerate fragments on next startup.
 - **SQLite storage:** The default database file is `SQL_DB_DIR`. Use `sqlite3` or `litecli` to inspect fragments, channel summaries, and consent tables. Maintenance jobs vacuum automatically, but you can run them manually via the `memory.rag` façade.
 - **Milvus integration:** Ensure a GPU-capable index is available. The notebooks in `docs/` walk through deploying Milvus with GPU acceleration and restarting services. Set `ENABLE_MILVUS=0` if you only want SQLite recall.
 - **Local LLMs:** When `USE_LOCAL=1`, completions are routed through Ollama. Embeddings and vision still rely on OpenAI unless you swap out handlers in `clients/oai.py`/`memory/rag/embeddings.py`.
-- **Extending the formatter:** Add a new handler in `formatter/handlers`, update the media `ORDER` in `formatter/composer.py`, and implement `content_text` so RAG embeddings stay meaningful.
-- **Command expansion:** Drop additional cogs in `src/gregg_limper/commands/handlers`, decorate with `@register_cog`, and they will sync automatically at startup.
-- **Tooling:** Implement additional tools under `src/gregg_limper/tools/handlers` using `@register_tool`. Tests live in `tests/tools/`, and the response pipeline will surface new tools automatically once they are registered.
 
 ## Troubleshooting & Debugging
 

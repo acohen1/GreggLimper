@@ -1,4 +1,16 @@
-"""Slash command registration helpers."""
+"""
+Auto-discovery & registry for slash command cogs.
+
+Any module inside ``commands/handlers`` that defines::
+
+    from gregg_limper.commands import register_cog
+
+    @register_cog
+    class MyCog(commands.Cog): ...
+
+is picked up automatically at import-time. Invoking :func:`setup` attaches
+every registered cog to the bot.
+"""
 
 from __future__ import annotations
 
@@ -13,16 +25,10 @@ from discord.ext import commands as commands_ext
 logger = logging.getLogger(__name__)
 
 _COG_CLASSES: List[Type[commands_ext.Cog]] = []
-_DISCOVERED = False
 
 
 def register_cog(cls: Optional[Type[commands_ext.Cog]] = None):
-    """
-    Register a Cog class for later attachment to the bot.
-
-    Modules should decorate their Cog classes with ``@register_cog`` so they are
-    attached automatically during :func:`setup`.
-    """
+    """Decorator registering a Cog class for later attachment to the bot."""
 
     def _register(cog_cls: Type[commands_ext.Cog]):
         if not issubclass(cog_cls, commands_ext.Cog):
@@ -36,22 +42,6 @@ def register_cog(cls: Optional[Type[commands_ext.Cog]] = None):
     return _register(cls)
 
 
-def _discover_handlers() -> None:
-    """Import handler modules once so they can register their cogs."""
-
-    global _DISCOVERED
-    if _DISCOVERED:
-        return
-
-    pkg_path = Path(__file__).resolve().parent / "handlers"
-    for _, modname, _ in iter_modules([str(pkg_path)]):
-        if modname.startswith("_"):
-            continue
-        import_module(f"{__name__}.handlers.{modname}")
-
-    _DISCOVERED = True
-
-
 async def setup(bot: commands_ext.Bot) -> None:
     """
     Attach registered cogs to ``bot``.
@@ -59,8 +49,6 @@ async def setup(bot: commands_ext.Bot) -> None:
     This must be invoked during the bot setup phase (typically inside
     ``commands.Bot.setup_hook``).
     """
-
-    _discover_handlers()
 
     for cog_cls in _COG_CLASSES:
         if bot.get_cog(cog_cls.__name__):
@@ -71,6 +59,13 @@ async def setup(bot: commands_ext.Bot) -> None:
         logger.info("Registered %d command cog(s)", len(_COG_CLASSES))
     else:
         logger.warning("No command cogs discovered; command tree is empty")
+
+
+_pkg_path = Path(__file__).resolve().parent / "handlers"
+for _, modname, _ in iter_modules([str(_pkg_path)]):
+    if modname.startswith("_"):
+        continue
+    import_module(f"{__name__}.handlers.{modname}")
 
 
 __all__ = [
