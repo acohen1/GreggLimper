@@ -242,7 +242,7 @@ The tables below highlight the specifics for each subsystem.
 | Directory | `src/gregg_limper/formatter/handlers/` |
 | Decorator | `formatter.handlers.register` |
 | Runtime API | `formatter.handlers.get(media_type)` |
-| When adding | Update `formatter/composer.py`’s `ORDER`, teach `formatter/classifier.py` how to populate the slice, and ensure the corresponding `Fragment` class implements `content_text` for RAG ingestion. |
+| When adding | Update `formatter/composer.py`’s `ORDER`, teach `formatter/classifier.py` how to populate the slice, and ensure the corresponding `Fragment` class implements `content_text` for RAG ingestion (see `src/gregg_limper/formatter/handlers/__init__.py`). |
 
 ### Command Cogs
 | Item | Location / Notes |
@@ -250,7 +250,7 @@ The tables below highlight the specifics for each subsystem.
 | Directory | `src/gregg_limper/commands/handlers/` |
 | Decorator | `commands.register_cog` |
 | Runtime API | `commands.setup(bot)` attaches every registered cog |
-| When adding | Provide any Discord slash command definitions within the Cog, note that modules are imported eagerly, and run the bot (or `pytest tests/test_commands_setup.py`) to validate registration. |
+| When adding | Provide any Discord slash command definitions within the Cog, note that modules are imported eagerly, and run the bot (or `pytest tests/test_commands_setup.py`) to validate registration (see `src/gregg_limper/commands/__init__.py`). |
 
 ### Tool Handlers
 | Item | Location / Notes |
@@ -258,7 +258,7 @@ The tables below highlight the specifics for each subsystem.
 | Directory | `src/gregg_limper/tools/handlers/` |
 | Decorator | `tools.register_tool` |
 | Runtime API | `tools.get_registered_tool_specs()` / `tools.get_tool_entry(name)` |
-| When adding | Return a `ToolResult` from `run`, add or update tests in `tests/tools/`, consider logging/timeout behaviour, and document new configuration knobs if needed. |
+| When adding | Return a `ToolResult` from `run`, add or update tests in `tests/tools/`, consider logging/timeout behaviour, and document new configuration knobs if needed (see `src/gregg_limper/tools/__init__.py`). |
 
 ## Development Notes
 
