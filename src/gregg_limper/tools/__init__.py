@@ -1,13 +1,32 @@
-"""Tool registry and base classes for model assistance.
+"""
+Auto-discovery & registry for tool handlers.
 
-Handlers under :mod:`gregg_limper.tools.handlers` register themselves here via
-decorators. The response pipeline in turn exposes the registry to OpenAI tools
-and executes tool calls at runtime.
+Any module inside ``tools/handlers`` that defines::
+
+    from gregg_limper.tools import register_tool, Tool, ToolSpec
+
+    @register_tool(ToolSpec(...))
+    class MyTool(Tool):
+        async def run(self, *, context, **kwargs): ...
+
+is picked up automatically at import-time. The response pipeline uses this
+registry to advertise tools to OpenAI and execute tool calls on demand.
+
+Adding a new tool requires changes across the app:
+
+1. Create a handler module under ``tools/handlers`` and register it with
+   :func:`register_tool`.
+2. Ensure the handler returns meaningful text for the LLM (update tests in
+   ``tests/tools``).
+3. Document any new configuration in ``README.md`` and update ``.env.example``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import import_module
+from pathlib import Path
+from pkgutil import iter_modules
 from typing import Any, Dict, Iterable, List, Type
 
 __all__ = [
@@ -78,14 +97,15 @@ class Tool:
 
 
 _registry: dict[str, Type[Tool]] = {}
-_handlers_loaded = False
+_HANDLERS_IMPORTED = False
 
 
 def register_tool(spec: ToolSpec):
     """Class decorator that binds ``spec`` to the decorated :class:`Tool`."""
+
     def decorator(cls: Type[Tool]) -> Type[Tool]:
         if not issubclass(cls, Tool):
-            raise TypeError("Tool registrations must derive from Tool")
+            raise TypeError("register_tool expects a Tool subclass")
         if spec.name in _registry:
             raise ValueError(f"Tool with name '{spec.name}' already registered")
         cls.spec = spec
@@ -96,16 +116,14 @@ def register_tool(spec: ToolSpec):
 
 
 def get_registered_tool_specs() -> List[ToolSpec]:
-    """Return all registered specs, ensuring handlers are imported."""
+    """Return all registered specs."""
 
-    _ensure_handlers_loaded()
     return [entry.spec for entry in _registry.values()]
 
 
 def get_tool_entry(name: str) -> Type[Tool] | None:
     """Return the registered :class:`Tool` subclass for ``name``."""
 
-    _ensure_handlers_loaded()
     return _registry.get(name)
 
 
@@ -118,13 +136,20 @@ def build_tool_prompt(specs: Iterable[ToolSpec]) -> str:
     return "\n".join(lines)
 
 
-def _ensure_handlers_loaded() -> None:
-    """Import handler modules so decorator side-effects fire once."""
+def _import_handlers() -> None:
+    """Import every handler module exactly once."""
 
-    global _handlers_loaded
-    if _handlers_loaded:
+    global _HANDLERS_IMPORTED
+    if _HANDLERS_IMPORTED:
         return
-    # Import side-effects register built-in tools
-    from . import handlers  # noqa: F401
 
-    _handlers_loaded = True
+    pkg_path = Path(__file__).resolve().parent / "handlers"
+    for _, modname, _ in iter_modules([str(pkg_path)]):
+        if modname.startswith("_"):
+            continue
+        import_module(f"{__name__}.handlers.{modname}")
+
+    _HANDLERS_IMPORTED = True
+
+
+_import_handlers()

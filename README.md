@@ -20,6 +20,7 @@ Discord assistant for knowledge retrieval and response generation. Gregg Limper 
   - [Run the Test Suite](#run-the-test-suite)
 - [Slash Commands](#slash-commands)
 - [Configuration Reference](#configuration-reference)
+- [Handler Registries](#handler-registries)
 - [Development Notes](#development-notes)
 - [Troubleshooting & Debugging](#troubleshooting--debugging)
 - [Further Reading](#further-reading)
@@ -227,6 +228,37 @@ Additional commands can be added by creating new handlers under `src/gregg_limpe
 | `USE_LOCAL` | `0` | When truthy, `response.handle` calls Ollama instead of OpenAI chat. |
 | `LOCAL_MODEL_ID` | `gpt-oss-20b` | Ollama model identifier. |
 | `LOCAL_SERVER_URL` | `http://localhost:11434` | Ollama server address. |
+
+## Handler Registries
+
+Formatter handlers, command cogs, and tool handlers all follow the same pattern:
+modules live under a dedicated ``handlers`` package, decorate their class with
+the package’s registration helper, and are auto-imported at module import time.
+The tables below highlight the specifics for each subsystem.
+
+### Formatter Handlers
+| Item | Location / Notes |
+| --- | --- |
+| Directory | `src/gregg_limper/formatter/handlers/` |
+| Decorator | `formatter.handlers.register` |
+| Runtime API | `formatter.handlers.get(media_type)` |
+| When adding | Update `formatter/composer.py`’s `ORDER`, teach `formatter/classifier.py` how to populate the slice, and ensure the corresponding `Fragment` class implements `content_text` for RAG ingestion. |
+
+### Command Cogs
+| Item | Location / Notes |
+| --- | --- |
+| Directory | `src/gregg_limper/commands/handlers/` |
+| Decorator | `commands.register_cog` |
+| Runtime API | `commands.setup(bot)` attaches every registered cog |
+| When adding | Provide any Discord slash command definitions within the Cog, note that modules are imported eagerly, and run the bot (or `pytest tests/test_commands_setup.py`) to validate registration. |
+
+### Tool Handlers
+| Item | Location / Notes |
+| --- | --- |
+| Directory | `src/gregg_limper/tools/handlers/` |
+| Decorator | `tools.register_tool` |
+| Runtime API | `tools.get_registered_tool_specs()` / `tools.get_tool_entry(name)` |
+| When adding | Return a `ToolResult` from `run`, add or update tests in `tests/tools/`, consider logging/timeout behaviour, and document new configuration knobs if needed. |
 
 ## Development Notes
 
