@@ -9,6 +9,14 @@ from . import ToolContext, ToolExecutionError, ToolResult, get_tool_entry
 
 
 async def execute_tool(name: str, arguments: str | dict[str, Any], *, context: ToolContext) -> ToolResult:
+    """
+    Execute the registered tool ``name`` with ``arguments``.
+
+    ``arguments`` may be a JSON string (as provided by OpenAI) or a parsed
+    mapping.  The helper normalises the payload, instantiates the tool class,
+    and returns its :class:`ToolResult`.
+    """
+
     entry = get_tool_entry(name)
     if entry is None:
         raise ToolExecutionError(f"Unknown tool '{name}'")

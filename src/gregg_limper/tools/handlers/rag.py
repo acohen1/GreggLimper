@@ -33,7 +33,11 @@ from .. import Tool, ToolContext, ToolResult, ToolSpec, ToolExecutionError, regi
     )
 )
 class RetrieveContextTool(Tool):
+    """Fetch cached context using the existing RAG vector search."""
+
     async def run(self, *, context: ToolContext, **kwargs: Any) -> ToolResult:
+        """Return a ranked list of matching fragments or a fallback message."""
+
         query = kwargs.get("query")
         if not query or not isinstance(query, str):
             raise ToolExecutionError("'query' must be supplied as a string")
