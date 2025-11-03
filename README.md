@@ -34,7 +34,7 @@ Gregg Limper is a Discord assistant that replies like a long-time regular who ne
 - Full Discord slash command integration with automatic cog discovery (`src/gregg_limper/commands`).
 - Channel-aware cache that memoizes formatted message fragments and guards ingestion with opt-in consent (`memory/cache`).
 - Rich media understanding: text normalization, image/GIF captioning, URL summarization, and YouTube metadata/vision blending (`formatter`).
-- Retrieval-augmented generation that merges cached history, semantic search results, channel summaries, and user profiles into a single prompt (`response`).
+- Retrieval workflow that blends cached history, channel summaries, user profiles, and tool-called semantic search when the model explicitly requests it (`response` + `tools`).
 - Dual model support: OpenAI APIs by default with optional local Ollama fallback (`config/local_llm.py`, `clients/ollama.py`).
 - Background maintenance that refreshes stale embeddings, keeps SQLite lean, and reconciles Milvus vector indexes (`memory/rag/scheduler.py`).
 - Debug-first ergonomics: cached fragments persist to disk, and every completion request records context and message payloads for inspection (`debug_history.md`, `debug_context.md`, `debug_messages.json`).
@@ -76,9 +76,15 @@ The cache relies on the formatter to transform raw Discord messages into stable 
 `response.pipeline.build_prompt_payload` assembles the final chat request:
 
 1. `response.history.build_history` serializes cached messages into user/assistant turns up to `core.CONTEXT_LENGTH`.
-2. `response.context.gather_context` pulls channel summaries, opt-in user profiles, and semantic memories by vector searching across configured channels.
+2. `response.context.gather_context` pulls channel summaries and opt-in user profiles; deeper history is fetched on demand via tools.
 3. Messages are merged with the system prompt from `response.system_prompt.get_system_prompt`, yielding a fully grounded `messages` list.
-4. The bot calls OpenAI (`clients/oai.chat`) or a configured local Ollama model (`clients/ollama.chat`) and records the prompt artifacts for later debugging.
+4. The bot calls OpenAI (`clients/oai.chat_full`) or a configured local Ollama model (`clients/ollama.chat`). When the model issues tool calls, the loop executes the requested tools, appends their outputs, and resubmits the conversation until a final reply is produced.
+
+### Tool Calling
+
+- Tool metadata lives in `src/gregg_limper/tools/__init__.py`; individual handlers reside in `src/gregg_limper/tools/handlers/` and register themselves with the shared decorator.
+- The `retrieve_context` tool reuses the RAG pipeline to surface prior fragments only when the assistant asks for them, keeping the base prompt slim.
+- Tool execution is logged (`response.__init__`), cached per call signature, and visible in `debug_messages.json` via synthetic `role: "tool"` entries.
 
 ### Background Maintenance
 
@@ -100,8 +106,9 @@ The cache relies on the formatter to transform raw Discord messages into stable 
 │   ├── formatter/         # Message classification and fragment builders
 │   ├── memory/            # Cache + RAG storage, ingestion, and scheduling
 │   ├── response/          # Prompt assembly and completion orchestration
+│   ├── tools/             # Tool registry, execution helpers, and handlers
 │   └── maintenance.py     # Shared utilities for background tasks
-├── tests/                 # Pytest suites covering cache, RAG, formatter, commands
+├── tests/                 # Pytest suites covering cache, formatter, tools, RAG, commands
 ├── docs/                  # Milvus GPU setup and restart notebooks
 ├── data/                  # Default SQLite DB and memo snapshots (development)
 ├── requirements.txt       # Dependency pin list (mirrors extras in pyproject)
@@ -229,6 +236,7 @@ Additional commands can be added by creating new handlers under `src/gregg_limpe
 - **Local LLMs:** When `USE_LOCAL=1`, completions are routed through Ollama. Embeddings and vision still rely on OpenAI unless you swap out handlers in `clients/oai.py`/`memory/rag/embeddings.py`.
 - **Extending the formatter:** Add a new handler in `formatter/handlers`, update the media `ORDER` in `formatter/composer.py`, and implement `content_text` so RAG embeddings stay meaningful.
 - **Command expansion:** Drop additional cogs in `src/gregg_limper/commands/handlers`, decorate with `@register_cog`, and they will sync automatically at startup.
+- **Tooling:** Implement additional tools under `src/gregg_limper/tools/handlers` using `@register_tool`. Tests live in `tests/tools/`, and the response pipeline will surface new tools automatically once they are registered.
 
 ## Troubleshooting & Debugging
 
@@ -236,6 +244,7 @@ Additional commands can be added by creating new handlers under `src/gregg_limpe
 - **Milvus connection errors:** `ready_hook.handle` runs `vector.health.validate_connection` and will log detailed GPU index failures. Disable Milvus or update credentials if validation raises.
 - **Consent issues:** `/rag_status` reflects the persisted consent table. Use `/optin enabled:false` to purge stored fragments for a user (`memory/rag/__init__.py::purge_user`).
 - **Prompt audits:** Each completion writes `debug_history.md`, `debug_context.md`, and `debug_messages.json` at the project root, mirroring exactly what was sent to the model.
+- **Tool debugging:** Tool executions log their call IDs and arguments at INFO level (`gregg_limper.response`). Tool outputs appear in `debug_messages.json` as `role: "tool"` entries.
 - **Cache visibility:** Enable INFO logging to see `Cached msg ...` previews coming from `memory/cache/manager.py`. Use `GLCache().list_formatted_messages` in a REPL to inspect memo payloads.
 
 ## Further Reading
