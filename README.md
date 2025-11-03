@@ -187,7 +187,7 @@ Additional commands can be added by creating new handlers under `src/gregg_limpe
 | `OPENAI_API_KEY` | Grants access to chat, embedding, image, and web models used across the pipeline. |
 | `GCLOUD_API_KEY` | Authenticates calls to the YouTube Data API for video metadata. |
 | `BOT_USER_ID` | Numeric Discord user ID of the bot; used to filter self-mentions and seed consent. |
-| `COT_MODEL_ID` / `MSG_MODEL_ID` / `IMG_MODEL_ID` / `WEB_MODEL_ID` | Model identifiers for chain-of-thought, chat replies, vision captioning, and web summarization respectively. |
+| `MSG_MODEL_ID` / `IMG_MODEL_ID` / `WEB_MODEL_ID` | Model identifiers for chat replies, vision captioning, and web summarization respectively. |
 | `CHANNEL_IDS` | Comma-separated list of guild channel IDs that the cache should ingest. |
 
 ### Core Behaviour
@@ -205,23 +205,21 @@ Additional commands can be added by creating new handlers under `src/gregg_limpe
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `CACHE_LENGTH` | `200` | Rolling window size per channel for the in-memory cache. |
-| `MEMO_DIR` | `memory/cache/data` | Directory where memo snapshots (`*.json.gz`) are persisted. |
+| `MEMO_DIR` | `data/cache` | Directory where memo snapshots (`*.json.gz`) are persisted. |
 | `CACHE_INIT_CONCURRENCY` | `20` | Parallelism when formatting history during startup. |
 | `CACHE_INGEST_CONCURRENCY` | `20` | Max concurrent ingestion tasks during hydration. |
-| `SQL_DB_DIR` | `memory/rag/sql/memory.db` | SQLite file used for long-term storage. |
+| `SQL_DB_DIR` | `data/memory.db` | SQLite file used for long-term storage. |
 | `EMB_MODEL_ID` / `EMB_DIM` | `text-embedding-3-small` / `1536` | Embedding model and dimension enforced by maintenance. |
 | `MAINTENANCE_INTERVAL` | `3600` | Seconds between maintenance cycles. |
 | `RAG_OPT_IN_LOOKBACK_DAYS` | `180` | How far back to backfill when a user opts in. |
-| `RAG_BACKFILL_BATCH_SIZE` | `100` | Discord history page size per request during backfill. |
-| `RAG_BACKFILL_RATE_LIMIT` | `1` | Requests per second cap while replaying history. |
 | `RAG_BACKFILL_CONCURRENCY` | `20` | Concurrency for RAG backfill ingestion tasks. |
-| `RAG_VECTOR_SEARCH_K` | `3` | Top-K nearest fragments returned per query. |
+| `RAG_VECTOR_SEARCH_K` | `3` | Maximum RAG fragments returned per query (tool requests are clamped to this). |
 
 ### Vector Store & Local Models
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `ENABLE_MILVUS` | `1` | Toggle Milvus integration. Set to `0` to rely on SQLite-only recall. |
+| `ENABLE_MILVUS` | `1` | Toggle Milvus integration. Set to `0` to fall back to short-term cache only (RAG retrieval is disabled). |
 | `MILVUS_HOST` / `MILVUS_PORT` | `127.0.0.1` / `19530` | Milvus connection parameters. |
 | `MILVUS_COLLECTION` | `vectordb` | Collection name for fragment vectors. |
 | `MILVUS_NLIST` / `MILVUS_NPROBE` / `MILVUS_DELETE_CHUNK` | `1024` / `32` / `800` | Index tuning knobs mirrored by maintenance utilities. |
@@ -262,9 +260,9 @@ The tables below highlight the specifics for each subsystem.
 
 ## Development Notes
 
-- **Cache persistence:** Memo snapshots live under `MEMO_DIR` (default `memory/cache/data`). Deleting the files will force the formatter to regenerate fragments on next startup.
-- **SQLite storage:** The default database file is `SQL_DB_DIR`. Use `sqlite3` or `litecli` to inspect fragments, channel summaries, and consent tables. Maintenance jobs vacuum automatically, but you can run them manually via the `memory.rag` façade.
-- **Milvus integration:** Ensure a GPU-capable index is available. The notebooks in `docs/` walk through deploying Milvus with GPU acceleration and restarting services. Set `ENABLE_MILVUS=0` if you only want SQLite recall.
+- **Cache persistence:** Memo snapshots live under `MEMO_DIR` (default `data/cache`). Deleting the files will force the formatter to regenerate fragments on next startup.
+- **SQLite storage:** The default database file is `SQL_DB_DIR` (default `data/memory.db`). Use `sqlite3` or `litecli` to inspect fragments, channel summaries, and consent tables. Maintenance jobs vacuum automatically, but you can run them manually via the `memory.rag` façade.
+- **Milvus integration:** Ensure a GPU-capable index is available. The notebooks in `docs/` walk through deploying Milvus with GPU acceleration and restarting services. Set `ENABLE_MILVUS=0` to disable long-term RAG search; the bot will answer using only the short-term cache.
 - **Local LLMs:** When `USE_LOCAL=1`, completions are routed through Ollama. Embeddings and vision still rely on OpenAI unless you swap out handlers in `clients/oai.py`/`memory/rag/embeddings.py`.
 
 ## Troubleshooting & Debugging

@@ -24,6 +24,7 @@ import re, logging
 from discord import Message
 from . import register
 from ...clients.oai import describe_image_bytes
+from ...config import core
 from ..model import GIFFragment
 
 logger = logging.getLogger(__name__)
@@ -86,9 +87,15 @@ class GIFHandler:
         """
         Downloads the .gif and extracts its first frame as PNG bytes.
         """
+        max_bytes = core.MAX_GIF_MB * 1024 * 1024
         async with session.get(gif_url) as r:
             r.raise_for_status()
+            content_length = r.headers.get("Content-Length")
+            if content_length and int(content_length) > max_bytes:
+                raise ValueError("GIF exceeds configured size limit")
             gif_bytes = await r.read()
+        if len(gif_bytes) > max_bytes:
+            raise ValueError("GIF exceeds configured size limit")
 
         with Image.open(BytesIO(gif_bytes)) as im:
             im.seek(0)

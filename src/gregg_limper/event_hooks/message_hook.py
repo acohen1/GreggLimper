@@ -10,8 +10,6 @@ from gregg_limper import response
 
 logger = logging.getLogger(__name__)
 
-# TODO: SEE TODO IN response/prompt.py ABOUT BETTER HANDLING SEMANTIC SEARCH
-
 async def handle(client: discord.Client, message: discord.Message):
     """Handle incoming Discord messages."""
 

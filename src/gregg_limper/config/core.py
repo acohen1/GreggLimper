@@ -13,7 +13,6 @@ class Core:
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY")
     BOT_USER_ID: int = int(os.getenv("BOT_USER_ID", "0"))
     GCLOUD_API_KEY: str = os.getenv("GCLOUD_API_KEY")
-    COT_MODEL_ID: str = os.getenv("COT_MODEL_ID")
     MSG_MODEL_ID: str = os.getenv("MSG_MODEL_ID")
     IMG_MODEL_ID: str = os.getenv("IMG_MODEL_ID")
     WEB_MODEL_ID: str = os.getenv("WEB_MODEL_ID")
@@ -30,7 +29,6 @@ class Core:
             ("OPENAI_API_KEY", self.OPENAI_API_KEY),
             ("GCLOUD_API_KEY", self.GCLOUD_API_KEY),
             ("BOT_USER_ID", self.BOT_USER_ID),
-            ("COT_MODEL_ID", self.COT_MODEL_ID),
             ("MSG_MODEL_ID", self.MSG_MODEL_ID),
             ("IMG_MODEL_ID", self.IMG_MODEL_ID),
             ("WEB_MODEL_ID", self.WEB_MODEL_ID),

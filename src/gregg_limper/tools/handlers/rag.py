@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from gregg_limper.config import prompt as prompt_cfg
 from gregg_limper.memory import rag
 
 from .. import Tool, ToolContext, ToolResult, ToolSpec, ToolExecutionError, register_tool
+
+_MAX_RESULTS = max(1, prompt_cfg.VECTOR_SEARCH_K)
+_DEFAULT_RESULTS = min(3, _MAX_RESULTS)
 
 
 @register_tool(
@@ -22,10 +26,10 @@ from .. import Tool, ToolContext, ToolResult, ToolSpec, ToolExecutionError, regi
                 },
                 "k": {
                     "type": "integer",
-                    "description": "Maximum number of results to return (1-6).",
+                    "description": f"Desired number of results (capped at server limit {_MAX_RESULTS}).",
                     "minimum": 1,
-                    "maximum": 6,
-                    "default": 3,
+                    "maximum": _MAX_RESULTS,
+                    "default": _DEFAULT_RESULTS,
                 },
             },
             "required": ["query"],
@@ -42,10 +46,10 @@ class RetrieveContextTool(Tool):
         if not query or not isinstance(query, str):
             raise ToolExecutionError("'query' must be supplied as a string")
 
-        k = kwargs.get("k", 3)
-        if not isinstance(k, int):
+        requested_k = kwargs.get("k", _DEFAULT_RESULTS)
+        if not isinstance(requested_k, int):
             raise ToolExecutionError("'k' must be an integer")
-        k = max(1, min(6, k))
+        k = max(1, min(_MAX_RESULTS, requested_k))
 
         guild_id = context.guild_id
         channel_id = context.channel_id

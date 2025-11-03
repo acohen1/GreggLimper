@@ -13,6 +13,7 @@ async def retention_prune(
     older_than_seconds: float, 
     vacuum: bool = False
 ) -> int:
+    # TODO: Schedule this helper from maintenance once automated pruning is implemented.
     def _run():
         cutoff = time.time() - older_than_seconds
         with conn:
@@ -30,11 +31,11 @@ async def retention_prune(
         return await asyncio.to_thread(_run)
 
 async def vacuum(conn, lock: asyncio.Lock) -> None:
+    # TODO: hook this into a background task so periodic VACUUM/ANALYZE runs automatically.
     def _run():
         conn.execute("VACUUM")
         conn.execute("ANALYZE")
     
     async with lock:
         await asyncio.to_thread(_run)
-
 
