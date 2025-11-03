@@ -32,15 +32,6 @@ def build_context_messages(context: ConversationContext) -> list[dict[str, str]]
         )
     )
 
-    sections.append(
-        _format_section(
-            "Semantic Memory",
-            _format_semantic_memory(context.semantic_memory)
-            if context.semantic_memory
-            else "_No related memories were found in the vector store._",
-        )
-    )
-
     content = "\n\n".join(sections).strip()
     if not content:
         return []
@@ -62,11 +53,4 @@ def _format_user_profiles(profiles: Iterable[dict]) -> str:
         f"- {json.dumps(profile, ensure_ascii=False, indent=2)}" for profile in profiles
     ]
     return "\n".join(serialized)
-
-
-def _format_semantic_memory(memories: Iterable[dict]) -> str:
-    if not memories:
-        return ""
-    serialized = json.dumps(list(memories), ensure_ascii=False, indent=2)
-    return f"```json\n{serialized}\n```"
 

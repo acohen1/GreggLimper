@@ -148,8 +148,24 @@ async def chat(
         ]
     """
     resp = await aoai.chat.completions.create(
-       model=model,
-       messages=messages,
+        model=model,
+        messages=messages,
     )
 
     return resp.choices[0].message.content.strip()
+
+
+async def chat_full(
+    messages: list[dict],
+    *,
+    model=core.MSG_MODEL_ID,
+    tools: list[dict] | None = None,
+    tool_choice: str | None = None,
+):
+    """Return the raw OpenAI chat completion response (optionally with tools)."""
+    kwargs = {"model": model, "messages": messages}
+    if tools:
+        kwargs["tools"] = tools
+        if tool_choice:
+            kwargs["tool_choice"] = tool_choice
+    return await aoai.chat.completions.create(**kwargs)
