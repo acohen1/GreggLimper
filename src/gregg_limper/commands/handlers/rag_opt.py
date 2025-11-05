@@ -11,6 +11,10 @@ from discord.ext import commands
 from .. import register_cog
 from ...memory.cache.core import process_message_for_rag
 from ...memory.rag import consent, purge_user
+from ...memory.rag.triggers import (
+    get_trigger_set,
+    message_has_trigger_reaction,
+)
 from gregg_limper.config import rag as rag_cfg
 from gregg_limper.config import core as core_cfg
 
@@ -43,6 +47,11 @@ async def _backfill_user_messages(
         else []
     )
 
+    triggers = get_trigger_set()
+    if triggers.is_empty():
+        logger.info("No reaction triggers configured; skipping RAG backfill.")
+        return processed
+
     # Bound concurrent formatting + ingestion so opt-in backfill remains cooperative
     sem = asyncio.Semaphore(rag_cfg.BACKFILL_CONCURRENCY)
     tasks: list[asyncio.Task[bool]] = []
@@ -65,6 +74,8 @@ async def _backfill_user_messages(
         try:
             async for msg in channel.history(limit=None, after=cutoff, oldest_first=True):
                 if msg.author.id != user.id:
+                    continue
+                if not message_has_trigger_reaction(msg, triggers=triggers):
                     continue
                 tasks.append(asyncio.create_task(_process_bounded(msg, channel.id)))
         except Exception:

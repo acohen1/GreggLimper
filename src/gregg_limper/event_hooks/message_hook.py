@@ -37,11 +37,13 @@ async def handle(client: discord.Client, message: discord.Message):
     bot_mentioned = bot_user in message.mentions if bot_user else False
 
     # 2) Add message to cache
-    # NOTE: The add message pipeline automatically handles formatting and ingestion.
-    # It will skip commands and feedback messages.
+    # NOTE: RAG ingestion is deferred to reaction triggers; this keeps memos warm without
+    # automatically pushing to long-term stores.
     cache = GLCache()  # Singleton instance
     try:
-        await cache.add_message(message.channel.id, message, bot_user=bot_user)
+        await cache.add_message(
+            message.channel.id, message, ingest=False, bot_user=bot_user
+        )
     except KeyError as e:
         logger.error(f"Failed to cache message {message.id}: {e}")
 

@@ -28,14 +28,15 @@ Discord assistant for knowledge retrieval and response generation. Gregg Limper 
 
 ## Overview
 
-Gregg Limper is a Discord assistant that replies like a long-time regular who never forgets an inside joke. Incoming guild traffic is cached, normalized, and selectively ingested into long-term storage so the bot can answer with recent context, previously shared links, and media summaries. Consent-aware retrieval, configurable storage backends (SQLite plus optional Milvus), and a modular formatter make the bot a natural fit for Discord servers that want reliable recall without retaining unwanted data—while keeping the experience casual and friendly.
+Gregg Limper is a Discord assistant that replies like a long-time regular who never forgets an inside joke. Incoming guild traffic is cached, normalized, and selectively ingested into long-term storage so the bot can answer with recent context, previously shared links, and media summaries. Only opted-in messages that pick up pre-approved reaction emoji are promoted into the RAG stores, keeping the corpus focused on what the community highlights. Consent-aware retrieval, configurable storage backends (SQLite plus optional Milvus), and a modular formatter make the bot a natural fit for Discord servers that want reliable recall without retaining unwanted data—while keeping the experience casual and friendly.
 
 ## Feature Highlights
 
 - Full Discord slash command integration with automatic cog discovery (`src/gregg_limper/commands`).
-- Channel-aware cache that memoizes formatted message fragments and guards ingestion with opt-in consent (`memory/cache`).
+- Channel-aware cache that memoizes formatted message fragments and guards ingestion with opt-in consent plus configurable reaction triggers (`memory/cache`).
 - Rich media understanding: text normalization, image/GIF captioning, URL summarization, and YouTube metadata/vision blending (`formatter`).
 - Retrieval workflow that blends cached history, channel summaries, user profiles, and tool-called semantic search when the model explicitly requests it (`response` + `tools`).
+- Operators can highlight high-signal moments by reacting with approved emoji, promoting only those opted-in messages into long-term RAG storage (`event_hooks/reaction_hook.py`).
 - Dual model support: OpenAI APIs by default with optional local Ollama fallback (`config/local_llm.py`, `clients/ollama.py`).
 - Background maintenance that refreshes stale embeddings, keeps SQLite lean, and reconciles Milvus vector indexes (`memory/rag/scheduler.py`).
 - Debug-first ergonomics: cached fragments persist to disk, and every completion request records context and message payloads for inspection (`debug_history.md`, `debug_context.md`, `debug_messages.json`).
@@ -47,7 +48,7 @@ Gregg Limper is a Discord assistant that replies like a long-time regular who ne
 1. `gregg_limper.clients.disc.GLBot` wires Discord events to the bot.
 2. `event_hooks.ready_hook.handle` hydrates the cache, validates Milvus (when enabled), and schedules maintenance.
 3. `event_hooks.message_hook.handle` filters messages by configured channel IDs, updates the cache, logs memo diagnostics, and triggers the response pipeline when the bot is mentioned.
-4. `event_hooks.reaction_hook.handle` currently logs high-signal reactions for future expansion.
+4. `event_hooks.reaction_hook.handle` ingests opted-in messages when they receive configured trigger reactions.
 
 ### Message Formatting Pipeline
 
@@ -66,6 +67,7 @@ The cache relies on the formatter to transform raw Discord messages into stable 
 
 - `memory/cache.manager.GLCache` is a singleton that keeps per-channel buffers (`ChannelCacheState`) aligned with memo snapshots on disk (`memory/cache/memo_store.py`).
 - `memory/cache/ingestion.py` checks user consent (`memory/rag/consent.py`) and only pushes memoized messages into long-term storage when users opt in.
+- `event_hooks.reaction_hook.handle` gates ingestion on configurable emoji reactions so only highlighted, opted-in messages are promoted into the RAG stores.
 - Long-term recall lives in `memory/rag`:
   - SQLite stores fragments, metadata, channel summaries, and user profiles (`memory/rag/sql`).
   - Vector embeddings are refreshed and stored via OpenAI (`memory/rag/embeddings.py`), with Milvus providing fast similarity search when `ENABLE_MILVUS` is true (`memory/rag/vector`).
@@ -147,6 +149,7 @@ pip install -e .[test]     # editable install with test extras
 2. Update all required keys (Discord, OpenAI, Google Cloud) and set `CHANNEL_IDS` to the numeric IDs you want the bot to monitor.
 3. If Milvus is not available, set `ENABLE_MILVUS=0` to skip vector indexing.
 4. To use a local Ollama model, set `USE_LOCAL=1`, `LOCAL_SERVER_URL`, and `LOCAL_MODEL_ID`.
+5. Configure `RAG_REACTION_EMOJIS` with the emoji descriptors (unicode, `<:name:id>`, `name:id`, numeric ID, or `:name:`) that should promote an opted-in message into long-term RAG storage.
 
 ### Run the Bot
 
@@ -157,7 +160,7 @@ python -m gregg_limper
 During startup the bot will:
 - Load environment variables from `.env` via `python-dotenv`.
 - Validate Milvus connectivity when enabled.
-- Hydrate the cache from Discord history for `CHANNEL_IDS`.
+- Hydrate the cache from Discord history for `CHANNEL_IDS`, backfilling only opted-in messages that already have a configured reaction trigger.
 - Kick off RAG maintenance tasks on a recurring schedule.
 
 ### Run the Test Suite
@@ -172,7 +175,7 @@ Pytest targets are organized by subsystem (`tests/cache`, `tests/formatter`, `te
 
 - `/help` — Lists all registered application commands.
 - `/lobotomy` — Demonstration command that returns a playful acknowledgement.
-- `/optin enabled:<bool>` — Toggle RAG consent for the caller. When enabling, the bot backfills recent history using bounded concurrency and notifies the user when ingestion completes.
+- `/optin enabled:<bool>` — Toggle RAG consent for the caller. When enabling, the bot backfills recent history (bounded concurrency) but only ingests messages that already carry one of the configured reaction triggers, then notifies the user on completion.
 - `/rag_status` — Report whether the caller is currently opted in to retrieval.
 
 Additional commands can be added by creating new handlers under `src/gregg_limper/commands/handlers/` and decorating cogs with `@register_cog`.
@@ -213,6 +216,7 @@ Additional commands can be added by creating new handlers under `src/gregg_limpe
 | `MAINTENANCE_INTERVAL` | `3600` | Seconds between maintenance cycles. |
 | `RAG_OPT_IN_LOOKBACK_DAYS` | `180` | How far back to backfill when a user opts in. |
 | `RAG_BACKFILL_CONCURRENCY` | `20` | Concurrency for RAG backfill ingestion tasks. |
+| `RAG_REACTION_EMOJIS` | _(empty)_ | Comma-separated list of emoji descriptors that trigger RAG ingestion. Supported forms: unicode literals (`🔥`), full custom emoji (`<:greatprophet:123>`), shorthand `name:id`, bare numeric IDs (`123`), and names with or without surrounding colons (`WOOW` or `:WOOW:`). |
 | `RAG_VECTOR_SEARCH_K` | `3` | Maximum RAG fragments returned per query (tool requests are clamped to this). |
 
 ### Vector Store & Local Models
@@ -270,6 +274,7 @@ The tables below highlight the specifics for each subsystem.
 - **Missing environment variables:** `config.core.Core` raises a `ValueError` listing missing keys early in startup. Double-check your `.env`.
 - **Milvus connection errors:** `ready_hook.handle` runs `vector.health.validate_connection` and will log detailed GPU index failures. Disable Milvus or update credentials if validation raises.
 - **Consent issues:** `/rag_status` reflects the persisted consent table. Use `/optin enabled:false` to purge stored fragments for a user (`memory/rag/__init__.py::purge_user`).
+- **No reactions, no ingest:** Opted-in messages only reach long-term storage when they have a reaction listed in `RAG_REACTION_EMOJIS`. Verify the config and make sure moderators react to important posts.
 - **Prompt audits:** Each completion writes `debug_history.md`, `debug_context.md`, and `debug_messages.json` at the project root, mirroring exactly what was sent to the model.
 - **Tool debugging:** Tool executions log their call IDs and arguments at INFO level (`gregg_limper.response`). Tool outputs appear in `debug_messages.json` as `role: "tool"` entries.
 - **Cache visibility:** Enable INFO logging to see `Cached msg ...` previews coming from `memory/cache/manager.py`. Use `GLCache().list_formatted_messages` in a REPL to inspect memo payloads.

@@ -8,6 +8,7 @@ from gregg_limper.commands.handlers.rag_opt import _backfill_user_messages
 from gregg_limper.config import cache as cache_cfg
 from gregg_limper.config import core as core_cfg
 from gregg_limper.memory.cache import memo, formatting, ingestion
+from gregg_limper.memory.rag.triggers import TriggerSet
 
 
 def _run(coro):
@@ -97,6 +98,16 @@ def test_backfill_matches_live_ingestion(monkeypatch):
         ingested_backfill.append(kwargs["message_id"])
 
     monkeypatch.setattr(ingestion.rag, "ingest_cache_message", fake_ingest_backfill)
+
+    triggers = TriggerSet(frozenset({"🧠"}), frozenset(), frozenset())
+
+    monkeypatch.setattr(
+        "gregg_limper.commands.handlers.rag_opt.get_trigger_set", lambda: triggers
+    )
+    monkeypatch.setattr(
+        "gregg_limper.commands.handlers.rag_opt.message_has_trigger_reaction",
+        lambda message, *, triggers: True,
+    )
 
     _run(_backfill_user_messages(user, guild))
 
