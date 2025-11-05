@@ -37,7 +37,7 @@ def test_reaction_hook_ingests_when_trigger_matches(monkeypatch):
         reaction_hook.cache_formatting, "format_for_cache", fake_format_for_cache
     )
 
-    def _raise_key_error(cid, mid):
+    def _raise_key_error(_cid, mid):
         raise KeyError(mid)
 
     cache_stub = SimpleNamespace(get_memo_record=_raise_key_error)
@@ -68,8 +68,16 @@ def test_reaction_hook_ignores_non_trigger(monkeypatch):
         raise AssertionError("evaluate_ingestion should not be called")
 
     monkeypatch.setattr(reaction_hook, "evaluate_ingestion", fake_evaluate)
-    monkeypatch.setattr(reaction_hook, "ingest_message", lambda *args, **kwargs: ingested.append(args))
-    monkeypatch.setattr(reaction_hook, "GLCache", lambda: SimpleNamespace(get_memo_record=lambda *_: None))
+    monkeypatch.setattr(
+        reaction_hook,
+        "ingest_message",
+        lambda *args, **kwargs: ingested.append(args),
+    )
+    monkeypatch.setattr(
+        reaction_hook,
+        "GLCache",
+        lambda: SimpleNamespace(get_memo_record=lambda *_: None),
+    )
     monkeypatch.setattr(reaction_hook.core, "CHANNEL_IDS", [1])
 
     _setup_trigger_patches(monkeypatch, should_match=False)
@@ -88,3 +96,48 @@ def test_reaction_hook_ignores_non_trigger(monkeypatch):
     asyncio.run(reaction_hook.handle(client, reaction, user))
 
     assert ingested == []
+
+
+def test_reaction_hook_allows_bot_authored_message_when_trigger_matches(monkeypatch):
+    ingested = []
+
+    async def fake_evaluate(*args, **kwargs):
+        return True, ResourceState(memo=False, sqlite=False)
+
+    async def fake_ingest(channel_id, message, cache_message):
+        ingested.append(message.id)
+
+    _setup_trigger_patches(monkeypatch, should_match=True)
+
+    monkeypatch.setattr(reaction_hook, "evaluate_ingestion", fake_evaluate)
+    monkeypatch.setattr(reaction_hook, "ingest_message", fake_ingest)
+    async def fake_format_for_cache(message):
+        return {"message_id": message.id}
+
+    monkeypatch.setattr(
+        reaction_hook.cache_formatting,
+        "format_for_cache",
+        fake_format_for_cache,
+    )
+
+    def _raise_key_error(*_args, **_kwargs):
+        raise KeyError()
+
+    cache_stub = SimpleNamespace(get_memo_record=_raise_key_error)
+    monkeypatch.setattr(reaction_hook, "GLCache", lambda: cache_stub)
+    monkeypatch.setattr(reaction_hook.core, "CHANNEL_IDS", [1])
+
+    message = SimpleNamespace(
+        id=55,
+        author=SimpleNamespace(id=999, bot=True),
+        guild=SimpleNamespace(id=7),
+        channel=SimpleNamespace(id=1),
+        reactions=[],
+    )
+    reaction = SimpleNamespace(message=message, emoji="🧠")
+    user = SimpleNamespace(name="moderator")
+    client = SimpleNamespace(user=SimpleNamespace(id=123))
+
+    asyncio.run(reaction_hook.handle(client, reaction, user))
+
+    assert ingested == [55]

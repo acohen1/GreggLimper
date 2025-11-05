@@ -46,19 +46,12 @@ async def handle(
     if channel_id not in core.CHANNEL_IDS:
         return
 
-    # Skip reactions added by bots.
-    if getattr(message.author, "bot", False):
-        logger.debug(
-            "Skipping reaction-trigger ingest for bot-authored message %s", message.id
-        )
-        return
-
+    # Skip reactions that don't match the emoji trigger set.
     triggers = get_trigger_set()
     if triggers.is_empty():
         logger.debug("Reaction ingestion skipped: no trigger emojis configured.")
         return
 
-    # Skip reactions that don't match the emoji trigger set.
     if not emoji_matches_trigger(reaction.emoji, triggers):
         return
 
