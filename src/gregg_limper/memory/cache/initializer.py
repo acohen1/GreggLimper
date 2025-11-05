@@ -17,6 +17,10 @@ from typing import List, TYPE_CHECKING
 from discord import Client, Message, TextChannel
 
 from gregg_limper.config import cache
+from gregg_limper.memory.rag.triggers import (
+    get_trigger_set,
+    message_has_trigger_reaction,
+)
 
 from .formatting import format_missing_messages
 from .ingestion import evaluate_ingestion, ingest_message
@@ -64,6 +68,8 @@ class CacheInitializer:
             formatted_missing = await format_missing_messages(
                 messages, self._memo_store.has, cache.INIT_CONCURRENCY
             )
+
+            triggers = get_trigger_set()
             
             # Limit concurrent ingestion during startup to avoid spiking downstream RAG stores.
             ingest_sem = asyncio.Semaphore(cache.INGEST_CONCURRENCY)
@@ -82,6 +88,11 @@ class CacheInitializer:
                     )
                 except Exception:
                     logger.exception("Failed to add message %s during init", message.id)
+                    continue
+
+                if triggers.is_empty() or not message_has_trigger_reaction(
+                    message, triggers=triggers
+                ):
                     continue
 
                 should_ingest, resources = await evaluate_ingestion(

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from gregg_limper.commands.handlers.rag_opt import RagOpt
 from gregg_limper.config import core as core_cfg
+from gregg_limper.memory.rag.triggers import TriggerSet
 
 
 class FakeMessage(SimpleNamespace):
@@ -118,6 +119,8 @@ def test_backfill(monkeypatch):
     processed = []
     ingested = []
 
+    triggers = TriggerSet(frozenset({"🧠"}), frozenset(), frozenset())
+
     async def fake_add_user(uid):
         return True
 
@@ -128,10 +131,23 @@ def test_backfill(monkeypatch):
             ingested.append(message.id)
         return {"message_id": message.id}, did_ingest
 
+    def fake_get_trigger_set():
+        return triggers
+
+    def fake_message_has_trigger_reaction(message, *, triggers):
+        return message.id in {101, 104}
+
     monkeypatch.setattr("gregg_limper.memory.rag.consent.add_user", fake_add_user)
     monkeypatch.setattr(
         "gregg_limper.commands.handlers.rag_opt.process_message_for_rag",
         fake_process_message_for_rag,
+    )
+    monkeypatch.setattr(
+        "gregg_limper.commands.handlers.rag_opt.get_trigger_set", fake_get_trigger_set
+    )
+    monkeypatch.setattr(
+        "gregg_limper.commands.handlers.rag_opt.message_has_trigger_reaction",
+        fake_message_has_trigger_reaction,
     )
 
     rag_cog = RagOpt(bot=SimpleNamespace())
@@ -170,6 +186,8 @@ def test_backfill_skips_command_messages(monkeypatch):
 
     processed = []
 
+    triggers = TriggerSet(frozenset({"🧠"}), frozenset(), frozenset())
+
     async def fake_add_user(uid):
         return True
 
@@ -177,10 +195,23 @@ def test_backfill_skips_command_messages(monkeypatch):
         processed.append((message.id, channel_id))
         return {"message_id": message.id}, False
 
+    def fake_get_trigger_set():
+        return triggers
+
+    def fake_message_has_trigger_reaction(message, *, triggers):
+        return True
+
     monkeypatch.setattr("gregg_limper.memory.rag.consent.add_user", fake_add_user)
     monkeypatch.setattr(
         "gregg_limper.commands.handlers.rag_opt.process_message_for_rag",
         fake_process_message_for_rag,
+    )
+    monkeypatch.setattr(
+        "gregg_limper.commands.handlers.rag_opt.get_trigger_set", fake_get_trigger_set
+    )
+    monkeypatch.setattr(
+        "gregg_limper.commands.handlers.rag_opt.message_has_trigger_reaction",
+        fake_message_has_trigger_reaction,
     )
 
     rag_cog = RagOpt(bot=SimpleNamespace())

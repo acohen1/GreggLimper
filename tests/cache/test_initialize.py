@@ -9,6 +9,7 @@ from gregg_limper.memory.cache import ingestion as cache_ingestion
 from gregg_limper.memory.cache import initializer as cache_initializer
 from gregg_limper.memory.cache import memo as cache_memo
 from gregg_limper.memory.cache.memo_store import MemoStore
+from gregg_limper.memory.rag.triggers import TriggerSet
 
 
 class FakeMessage(SimpleNamespace):
@@ -49,9 +50,20 @@ class FakeClient:
         return self._channel
 
 
+def _patch_triggers(monkeypatch, predicate=lambda message: True):
+    triggers = TriggerSet(frozenset({"🧠"}), frozenset(), frozenset())
+    monkeypatch.setattr(cache_initializer, "get_trigger_set", lambda: triggers)
+    monkeypatch.setattr(
+        cache_initializer,
+        "message_has_trigger_reaction",
+        lambda message, *, triggers: predicate(message),
+    )
+
+
 def test_initialize_hydrates_recent_history(monkeypatch):
     monkeypatch.setattr(cache_cfg, "CACHE_LENGTH", 10)
     monkeypatch.setattr(cache_initializer, "TextChannel", FakeChannel)
+    _patch_triggers(monkeypatch)
 
     async def fake_is_opted_in(uid):
         return False
@@ -101,6 +113,7 @@ def test_initialize_preserves_order_with_slow_formatter(monkeypatch):
     monkeypatch.setattr(cache_cfg, "CACHE_LENGTH", 5)
     monkeypatch.setattr(cache_cfg, "INIT_CONCURRENCY", 3)
     monkeypatch.setattr(cache_initializer, "TextChannel", FakeChannel)
+    _patch_triggers(monkeypatch)
 
     async def fake_is_opted_in(uid):
         return False
@@ -147,6 +160,7 @@ def test_initialize_preserves_order_with_slow_formatter(monkeypatch):
 def test_initialize_formats_only_missing_payloads(monkeypatch):
     monkeypatch.setattr(cache_cfg, "CACHE_LENGTH", 10)
     monkeypatch.setattr(cache_initializer, "TextChannel", FakeChannel)
+    _patch_triggers(monkeypatch)
 
     async def fake_is_opted_in(uid):
         return False
@@ -207,6 +221,7 @@ def test_initialize_formats_only_missing_payloads(monkeypatch):
 def test_initialize_skips_command_and_feedback(monkeypatch):
     monkeypatch.setattr(cache_cfg, "CACHE_LENGTH", 10)
     monkeypatch.setattr(cache_initializer, "TextChannel", FakeChannel)
+    _patch_triggers(monkeypatch)
 
     async def fake_is_opted_in(uid):
         return False
