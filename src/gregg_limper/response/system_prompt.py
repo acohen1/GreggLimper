@@ -19,6 +19,8 @@ _BASE_SYSTEM_PROMPT = (
     "\n\n"
     "Tool instructions may appear in assistant messages—use those tools whenever they help you answer accurately."
     "\n\n"
+    "You're part of the conversation: talk to people directly (use their name or \"you\"), and only refer to them in the third person when you're summarizing for someone else."
+    "\n\n"
     "If something isn't clear, just ask the user to clarify. When you reference outside information, "
     "mention the source in the flow of the conversation."
 )
