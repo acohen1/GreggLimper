@@ -14,3 +14,4 @@ debug_history.md
 debug_context.md
 debug_messages.json
 *.egg-info/
+.DS_Store

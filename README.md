@@ -150,6 +150,7 @@ pip install -e .[test]     # editable install with test extras
 3. If Milvus is not available, set `ENABLE_MILVUS=0` to skip vector indexing.
 4. To use a local Ollama model, set `USE_LOCAL=1`, `LOCAL_SERVER_URL`, and `LOCAL_MODEL_ID`.
 5. Configure `RAG_REACTION_EMOJIS` with the emoji descriptors (unicode, `<:name:id>`, `name:id`, numeric ID, or `:name:`) that should promote an opted-in message into long-term RAG storage.
+6. (Optional) Customize the bot’s persona by pointing `PERSONA_PROMPT_FILE` to a text file (default `data/persona_prompt.txt`, not committed). When the file exists, its contents are appended to the system prompt.
 
 ### Run the Bot
 
@@ -202,6 +203,7 @@ Additional commands can be added by creating new handlers under `src/gregg_limpe
 | `MAX_GIF_MB` | `10` | Guards GIF downloads during metadata extraction. |
 | `YT_THUMBNAIL_SIZE` | `medium` | Thumbnail size requested from the YouTube API. |
 | `YT_DESC_MAX_LEN` | `200` | Truncation length for video descriptions in fragments. |
+| `PERSONA_PROMPT_FILE` | `data/persona_prompt.txt` | Path to a gitignored text file containing persona instructions; if the file exists, its contents are appended to the system prompt. |
 
 ### Cache & Retrieval
 

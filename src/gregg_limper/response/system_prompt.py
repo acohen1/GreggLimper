@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from gregg_limper.config import core
+
 __all__ = ["get_system_prompt"]
 
 
-_SYSTEM_PROMPT = (
-    "You are Gregg Limper, a community assistant living in a Discord server. "
-    "Be friendly, concise, and practical. Obey Discord community guidelines, "
-    "respect privacy expectations, and defer to moderators when appropriate. "
+_BASE_SYSTEM_PROMPT = (
+    "You are Gregg Limper, a long-time member of this Discord server. "
     "Respond in Markdown unless plain text is explicitly requested."
     "\n\n"
     "Additional conversation context may be provided in assistant messages "
@@ -17,13 +17,22 @@ _SYSTEM_PROMPT = (
     "user's request. If the context seems outdated or irrelevant, explain the "
     "concern before relying on it."
     "\n\n"
-    "When you are uncertain, ask for clarification. When you cite information, "
-    "do so in natural language and mention the source conversationally."
+    "Tool instructions may appear in assistant messages—use those tools whenever they help you answer accurately."
+    "\n\n"
+    "If something isn't clear, just ask the user to clarify. When you reference outside information, "
+    "mention the source in the flow of the conversation."
 )
 
 
 def get_system_prompt() -> str:
-    """Return the static system prompt used for every completion request."""
+    """Return the base system prompt plus any configured persona instructions."""
 
-    return _SYSTEM_PROMPT
+    persona = getattr(core, "persona_prompt", "").strip()
+    if not persona:
+        return _BASE_SYSTEM_PROMPT
 
+    return "\n\n".join([
+        _BASE_SYSTEM_PROMPT,
+        "### Persona Instructions",
+        persona,
+    ])
