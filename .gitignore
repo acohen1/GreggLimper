@@ -16,3 +16,4 @@ debug_messages.json
 *.egg-info/
 scripts/
 .DS_Store
+scripts/
