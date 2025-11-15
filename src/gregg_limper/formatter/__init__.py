@@ -23,7 +23,8 @@ __all__ = [
     "LinkFragment",
 ]
 
-
+# TODO: Make media handlers (img/gif/yt) output descriptions in the style of the bot.
+# This should help us shape the model's personality.
 async def format_message(msg: Message) -> dict:
     """
     Classify and compose message fragments.

@@ -61,18 +61,30 @@ async def build_dataset(config: DatasetBuildConfig) -> None:
         logger.info("Sample cap enabled: %d max supervised records", config.max_samples)
 
     async with connect_tuner_client(config.discord_token) as client:
-        raw_conversations = await collect_history(client=client, config=config)
-        persist_raw_conversations(raw_conversations, destination=config.raw_dump_dir)
-        stats["channels_collected"] = len(raw_conversations)
-        stats["messages_collected"] = sum(
-            len(convo.messages) for convo in raw_conversations
+        raw_conversations = await collect_history(
+            client=client,
+            config=config,
+            reuse_raw=config.reuse_raw,
         )
+
+    stats["channels_collected"] = len(raw_conversations)
+    stats["messages_collected"] = sum(
+        len(convo.messages) for convo in raw_conversations
+    )
+
+    if config.reuse_raw:
+        _log_stage(
+            1,
+            f"Reused {stats['messages_collected']} cached messages across {len(raw_conversations)} channels.",
+        )
+    else:
+        persist_raw_conversations(raw_conversations, destination=config.raw_dump_dir)
         _log_stage(
             1,
             f"Hydrated {stats['messages_collected']} messages across {len(raw_conversations)} channels.",
         )
 
-        samples = await _process_conversations(config, stats, raw_conversations)
+    samples = await _process_conversations(config, stats, raw_conversations)
 
     if config.dry_run:
         _log_stage(5, "Dry run complete; skipped dataset write.")
@@ -97,13 +109,28 @@ async def _process_conversations(
     )
 
     message_lookup = _index_messages(raw_conversations)
-    refined_segments = await refine_segments_with_llm(
-        candidates, message_lookup=message_lookup, config=config
-    )
-    stats["segments_approved"] = len(refined_segments)
-    stats["segments_rejected"] = max(
-        stats["segment_candidates"] - stats["segments_approved"], 0
-    )
+    refined_segments: List[SegmentedConversation] | None = None
+    if config.reuse_segments:
+        refined_segments = _load_segments(config.segment_dump_dir)
+        if refined_segments:
+            stats["segments_approved"] = len(refined_segments)
+            stats["segments_rejected"] = max(
+                stats["segment_candidates"] - stats["segments_approved"], 0
+            )
+            _log_stage(
+                3,
+                f"Reused {len(refined_segments)} cached segments.",
+            )
+
+    if refined_segments is None:
+        refined_segments = await refine_segments_with_llm(
+            candidates, message_lookup=message_lookup, config=config
+        )
+        stats["segments_approved"] = len(refined_segments)
+        stats["segments_rejected"] = max(
+            stats["segment_candidates"] - stats["segments_approved"], 0
+        )
+        _persist_segments(config.segment_dump_dir, refined_segments)
     approval_rate = (
         (stats["segments_approved"] / stats["segment_candidates"]) * 100
         if stats["segment_candidates"]
@@ -246,6 +273,42 @@ def _log_sample_progress(processed: int, total: int, built: int, cap: int | None
         built,
         f" / cap {cap}" if cap is not None else "",
     )
+
+
+def _persist_segments(directory: Path, segments: List[SegmentedConversation]) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "segments.json"
+    payload = [
+        {
+            "channel_id": seg.channel_id,
+            "message_ids": seg.message_ids,
+            "assistant_user_id": seg.assigned_assistant_id,
+        }
+        for seg in segments
+    ]
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    logger.info("Cached %d refined segments at %s", len(segments), path)
+
+
+def _load_segments(directory: Path) -> List[SegmentedConversation] | None:
+    path = directory / "segments.json"
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        segments = [
+            SegmentedConversation(
+                channel_id=item["channel_id"],
+                message_ids=item["message_ids"],
+                assigned_assistant_id=item["assistant_user_id"],
+            )
+            for item in payload
+        ]
+        logger.info("Loaded %d cached segments from %s", len(segments), path)
+        return segments
+    except Exception:
+        logger.warning("Failed to load cached segments from %s", path, exc_info=True)
+        return None
 
 
 __all__ = ["build_dataset"]

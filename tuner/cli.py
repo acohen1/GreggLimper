@@ -11,7 +11,8 @@ from .config import DatasetBuildConfig
 from .runner import build_dataset
 
 DEFAULT_OUTPUT_PATH = Path("data/finetune/records.jsonl")
-DEFAULT_RAW_DUMP_DIR = Path("data/finetune")
+DEFAULT_RAW_DUMP_DIR = Path("data/finetune/raw")
+DEFAULT_SEGMENT_DIR = Path("data/finetune/segments")
 DEFAULT_STATS_PATH = Path("data/finetune/stats.json")
 DEFAULT_CONFIG_PATH = Path("tuner/config.toml")
 DEFAULT_MAX_MESSAGES = 10000
@@ -131,6 +132,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Model ID used when confirming synthetic retrieve_context triggers (overrides config).",
     )
     build_cmd.add_argument(
+        "--segment-dir",
+        type=Path,
+        default=None,
+        help="Directory to cache refined segments (overrides config).",
+    )
+    build_cmd.add_argument(
+        "--reuse-raw",
+        action="store_true",
+        help="Reuse previously persisted raw Discord dumps when available.",
+    )
+    build_cmd.add_argument(
+        "--reuse-segments",
+        action="store_true",
+        help="Reuse cached refined segments instead of re-running the LLM.",
+    )
+    build_cmd.add_argument(
+        "--assistant-emojis",
+        nargs="+",
+        default=None,
+        help="Custom emoji tokens permitted in assistant turns (overrides config).",
+    )
+    build_cmd.add_argument(
         "--print-stats",
         action="store_true",
         help="Print aggregated run statistics after completion (overrides config).",
@@ -231,8 +254,18 @@ def _resolve_dataset_config(
     stats_path = _coerce_path(
         args.stats_file or dataset_cfg.get("stats_path"), DEFAULT_STATS_PATH
     )
+    segment_dump_dir = _coerce_path(
+        args.segment_dir or dataset_cfg.get("segment_dir"), DEFAULT_SEGMENT_DIR
+    )
     dry_run = args.dry_run or bool(dataset_cfg.get("dry_run", False))
     print_stats = args.print_stats or bool(dataset_cfg.get("print_stats", False))
+    reuse_raw = bool(args.reuse_raw or dataset_cfg.get("reuse_raw", False))
+    reuse_segments = bool(args.reuse_segments or dataset_cfg.get("reuse_segments", False))
+    if args.assistant_emojis is not None:
+        assistant_emojis = {emoji for emoji in args.assistant_emojis if emoji}
+    else:
+        assistant_cfg = dataset_cfg.get("assistant_custom_emojis") or []
+        assistant_emojis = {str(item) for item in assistant_cfg if str(item)}
 
     segment_model = args.segment_model or models_cfg.get("segment")
     tool_trigger_model = args.tool_trigger_model or models_cfg.get("tool_trigger")
@@ -261,6 +294,10 @@ def _resolve_dataset_config(
         segment_decider_model=segment_model,
         tool_trigger_model=tool_trigger_model,
         segment_decider_concurrency=segment_concurrency,
+        allowed_assistant_custom_emojis=assistant_emojis,
+        segment_dump_dir=segment_dump_dir,
+        reuse_raw=reuse_raw,
+        reuse_segments=reuse_segments,
         print_stats=print_stats,
         stats_path=stats_path,
         discord_token=discord_token,

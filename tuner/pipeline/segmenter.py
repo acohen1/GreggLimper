@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial
-from typing import Awaitable, Callable, Dict, Iterable, List, Sequence, cast
+from typing import Awaitable, Callable, Dict, Iterable, List, Sequence, Set, cast
 
 from discord import Message
 
@@ -22,6 +23,8 @@ MAX_GAP_SECONDS = 180
 MAX_SEGMENT_MESSAGES = 40
 MIN_SEGMENT_MESSAGES = 4
 MAX_PARTICIPANTS = 5
+_URL_RE = re.compile(r"https?://\S+")
+_CUSTOM_EMOJI_RE = re.compile(r"<a?:([\w\d_]+):\d+>")
 
 
 def propose_segments(conversations: Iterable[RawConversation]) -> List[SegmentCandidate]:
@@ -162,10 +165,19 @@ async def refine_segments_with_llm(
                 await mark_progress()
                 return
 
+            eligible_assistants = _eligible_assistant_ids(
+                records,
+                assigned_ids=allowed,
+                emoji_whitelist=config.allowed_assistant_custom_emojis,
+            )
+            if not eligible_assistants:
+                await mark_progress()
+                return
+
             decision = None
             async with semaphore:
                 try:
-                    decision = await active_decider(records, allowed)
+                    decision = await active_decider(records, eligible_assistants)
                 except Exception:
                     logger.warning(
                         "LLM boundary evaluation failed for channel %s; skipping.",
@@ -175,7 +187,7 @@ async def refine_segments_with_llm(
                     decision = None
 
             if decision is None and allow_fallback:
-                decision = _heuristic_decide(records, allowed)
+                decision = _heuristic_decide(records, eligible_assistants)
 
             if decision is not None:
                 refined.append(
@@ -202,7 +214,16 @@ async def refine_segments_with_llm(
                 processed += 1
                 continue
 
-            decision = _heuristic_decide(records, allowed)
+            eligible_assistants = _eligible_assistant_ids(
+                records,
+                assigned_ids=allowed,
+                emoji_whitelist=config.allowed_assistant_custom_emojis,
+            )
+            if not eligible_assistants:
+                processed += 1
+                continue
+
+            decision = _heuristic_decide(records, eligible_assistants)
             if decision is None:
                 processed += 1
                 continue
@@ -308,6 +329,125 @@ def _heuristic_decide(
 
     message_ids = [msg.id for msg in messages]
     return _SegmentDecision(message_ids=message_ids, assistant_id=assistant_id)
+
+
+def _eligible_assistant_ids(
+    messages: Sequence[Message],
+    *,
+    assigned_ids: Sequence[int],
+    emoji_whitelist: Sequence[str],
+) -> set[int]:
+    assigned_set = set(assigned_ids or [])
+    whitelist = {
+        _normalize_custom_emoji_token(token)
+        for token in (emoji_whitelist or [])
+        if _normalize_custom_emoji_token(token)
+    }
+
+    seen_authors: set[int] = set()
+    disqualified_media: set[int] = set()
+    disqualified_emoji: set[int] = set()
+    max_consecutive: dict[int, int] = {}
+
+    last_author: int | None = None
+    streak = 0
+
+    for message in messages:
+        author_id = getattr(message.author, "id", None)
+        if author_id is None or (assigned_set and author_id not in assigned_set):
+            last_author = None
+            streak = 0
+            continue
+
+        seen_authors.add(author_id)
+
+        if author_id == last_author:
+            streak += 1
+        else:
+            last_author = author_id
+            streak = 1
+        max_consecutive[author_id] = max(
+            streak, max_consecutive.get(author_id, 0)
+        )
+
+        if _message_has_media(message):
+            disqualified_media.add(author_id)
+
+        if _contains_disallowed_custom_emoji(message, whitelist):
+            disqualified_emoji.add(author_id)
+
+    eligible = {
+        author_id
+        for author_id in seen_authors
+        if max_consecutive.get(author_id, 0) <= 1
+        and author_id not in disqualified_media
+        and author_id not in disqualified_emoji
+    }
+    return eligible
+
+
+def _message_has_media(message: Message) -> bool:
+    attachments = getattr(message, "attachments", None) or []
+    embeds = getattr(message, "embeds", None) or []
+    stickers = getattr(message, "stickers", None) or []
+    if attachments or embeds or stickers:
+        return True
+
+    fragments = getattr(message, "fragments", None)
+    if fragments:
+        for frag in fragments:
+            frag_type = (frag.get("type") or "text").lower()
+            if frag_type != "text":
+                return True
+
+    classified = getattr(message, "classified_fragments", None)
+    if isinstance(classified, dict):
+        for key, bucket in classified.items():
+            if key.lower() != "text" and bucket:
+                return True
+
+    content = (getattr(message, "clean_content", None) or message.content or "").strip()
+    if not content:
+        return False
+
+    if _URL_RE.search(content):
+        return True
+    return False
+
+
+def _contains_disallowed_custom_emoji(
+    message: Message, whitelist: set[str]
+) -> bool:
+    content = (getattr(message, "clean_content", None) or message.content or "") or ""
+    matches = _CUSTOM_EMOJI_RE.findall(content)
+    if not matches:
+        return False
+
+    if not whitelist:
+        return True
+
+    for token in matches:
+        if _normalize_custom_emoji_token(token) not in whitelist:
+            return True
+    return False
+
+
+def _normalize_custom_emoji_token(token: str) -> str:
+    token = (token or "").strip()
+    if not token:
+        return ""
+    match = _CUSTOM_EMOJI_RE.fullmatch(token)
+    if match:
+        return match.group(1).lower()
+
+    trimmed = token.strip("<>")
+    parts = [part for part in trimmed.split(":") if part]
+    if len(parts) >= 2:
+        # Handles strings like "a:emoji:123456"
+        candidate = parts[1]
+    else:
+        candidate = parts[0]
+    return candidate.strip(":").lower()
 
 
 def _format_for_llm(messages: Sequence[Message]) -> str:

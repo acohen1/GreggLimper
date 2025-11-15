@@ -8,6 +8,9 @@ from typing import Iterable, List, Sequence
 
 from discord import Client, Message, TextChannel
 
+
+from types import SimpleNamespace
+
 from ..config import DatasetBuildConfig
 from .types import RawConversation
 
@@ -18,6 +21,7 @@ async def collect_history(
     *,
     client: Client,
     config: DatasetBuildConfig,
+    reuse_raw: bool = False,
 ) -> List[RawConversation]:
     """
     Fetch and filter Discord messages based on the dataset configuration.
@@ -33,7 +37,16 @@ async def collect_history(
     allowed = set(config.allowed_user_ids)
 
     conversations: list[RawConversation] = []
+    raw_dir = config.raw_dump_dir
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    reuse_raw = reuse_raw or config.reuse_raw
     for channel_id in config.channel_ids:
+        if reuse_raw:
+            cached = _load_cached_channel(raw_dir, channel_id)
+            if cached is not None:
+                conversations.append(cached)
+                continue
+
         channel = await _resolve_channel(client, channel_id)
         if channel is None:
             continue
@@ -58,13 +71,13 @@ async def collect_history(
             channel_name,
             channel.id,
         )
-        conversations.append(
-            RawConversation(
-                channel_id=channel_id,
-                guild_id=getattr(channel.guild, "id", None),
-                messages=messages,
-            )
+        convo = RawConversation(
+            channel_id=channel_id,
+            guild_id=getattr(channel.guild, "id", None),
+            messages=messages,
         )
+        conversations.append(convo)
+        _persist_single_raw(convo, raw_dir)
 
     return conversations
 
@@ -83,12 +96,7 @@ def persist_raw_conversations(
 
     destination.mkdir(parents=True, exist_ok=True)
     for convo in conversations:
-        path = destination / f"{convo.channel_id}.jsonl"
-        with path.open("w", encoding="utf-8") as handle:
-            for message in convo.messages:
-                handle.write(json.dumps(_serialize_message(message), ensure_ascii=False))
-                handle.write("\n")
-        logger.info("Wrote raw transcript: %s", path)
+        _persist_single_raw(convo, destination)
 
 
 async def _resolve_channel(client: Client, channel_id: int) -> TextChannel | None:
@@ -178,6 +186,53 @@ def _ensure_timezone(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def _persist_single_raw(convo: RawConversation, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    path = destination / f"{convo.channel_id}.jsonl"
+    with path.open("w", encoding="utf-8") as handle:
+        for message in convo.messages:
+            handle.write(json.dumps(_serialize_message(message), ensure_ascii=False))
+            handle.write("\n")
+    logger.info("Wrote raw transcript: %s", path)
+
+
+def _load_cached_channel(directory: Path, channel_id: int) -> RawConversation | None:
+    path = directory / f"{channel_id}.jsonl"
+    if not path.is_file():
+        return None
+    try:
+        messages: list[Message] = []
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                payload = json.loads(line)
+                author = SimpleNamespace(
+                    id=payload.get("author_id"),
+                    display_name=payload.get("author"),
+                    name=payload.get("author"),
+                )
+                stub = SimpleNamespace(
+                    id=payload.get("id"),
+                    author=author,
+                    channel=SimpleNamespace(id=channel_id),
+                    created_at=_ensure_timezone(
+                        datetime.fromisoformat(payload["created_at"])
+                    ),
+                    clean_content=payload.get("content"),
+                    content=payload.get("content"),
+                    attachments=[
+                        SimpleNamespace(url=url)
+                        for url in payload.get("attachments", [])
+                    ],
+                    embeds=[],
+                )
+                messages.append(stub)
+    except Exception:
+        logger.warning("Failed to load cached raw channel %s", channel_id, exc_info=True)
+        return None
+
+    return RawConversation(channel_id=channel_id, guild_id=None, messages=messages)
 
 
 __all__ = ["collect_history", "persist_raw_conversations"]
