@@ -39,6 +39,7 @@ def propose_segments(conversations: Iterable[RawConversation]) -> List[SegmentCa
         current_ids: list[int] = []
         participants: set[int] = set()
         last_timestamp: datetime | None = None
+        segment_count_before = len(candidates)
 
         for message in convo.messages:
             created = _ensure_timezone(message.created_at)
@@ -81,6 +82,15 @@ def propose_segments(conversations: Iterable[RawConversation]) -> List[SegmentCa
                 )
             )
 
+        produced = len(candidates) - segment_count_before
+        if produced:
+            logger.info(
+                "Segmenter: channel %s produced %d candidates (total %d)",
+                convo.channel_id,
+                produced,
+                len(candidates),
+            )
+
     logger.info("Proposed %s raw segments", len(candidates))
     return candidates
 
@@ -117,6 +127,11 @@ async def refine_segments_with_llm(
             partial(_llm_decide, model_id=model_id),
         )
 
+    candidates = list(candidates)
+    total_candidates = len(candidates)
+    log_interval = max(1, total_candidates // 20) if total_candidates else 1
+
+    processed = 0
     for candidate in candidates:
         records = [
             message_lookup[mid]
@@ -151,6 +166,15 @@ async def refine_segments_with_llm(
                 assigned_assistant_id=decision.assistant_id,
             )
         )
+
+        processed += 1
+        if processed % log_interval == 0 or processed == total_candidates:
+            logger.info(
+                "Segmenter: refined %d/%d candidates (approved %d)",
+                processed,
+                total_candidates,
+                len(refined),
+            )
 
     logger.info("LLM approved %s segments", len(refined))
     return refined

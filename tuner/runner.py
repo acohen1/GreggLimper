@@ -228,12 +228,10 @@ def _emit_stats(stats: dict, *, config: DatasetBuildConfig) -> None:
 
 
 def _log_stage(stage_idx: int, message: str) -> None:
-    percent = int(stage_idx / TOTAL_PROGRESS_STEPS * 100)
     logger.info(
-        "[Progress %d/%d | %d%%] %s",
+        "[Progress %d/%d] %s",
         stage_idx,
         TOTAL_PROGRESS_STEPS,
-        percent,
         message,
     )
 
