@@ -10,6 +10,7 @@ from discord import Client, Message, TextChannel
 from types import SimpleNamespace
 
 from ..config import DatasetBuildConfig
+from ..util.alias import get_meta
 from .types import RawConversation
 
 logger = logging.getLogger(__name__)
@@ -149,8 +150,9 @@ async def _fetch_channel_history(
 
 
 def _serialize_message(message: Message) -> dict:
+    meta = get_meta(message)
     author = getattr(message, "author", None)
-    alias_override = getattr(message, "_pii_author_alias", None)
+    alias_override = (meta or {}).get("author_alias")
     display_name = (
         alias_override
         or getattr(author, "display_name", None)
@@ -182,6 +184,11 @@ def _serialize_message(message: Message) -> dict:
         me = getattr(guild, "me", None)
         if me is not None:
             guild_me_id = getattr(me, "id", None)
+    content_override = None
+    if meta:
+        content_override = meta.get("clean_content") or meta.get("content")
+    mentions_override = (meta or {}).get("mentions")
+
     return {
         "id": getattr(message, "id", None),
         "author_id": getattr(author, "id", None),
@@ -193,15 +200,14 @@ def _serialize_message(message: Message) -> dict:
         "guild_me_id": guild_me_id,
         "created_at": _ensure_timezone(message.created_at).isoformat(),
         "content": (
-            getattr(message, "_pii_clean_content", None)
-            or getattr(message, "_pii_content", None)
+            content_override
             or (message.clean_content or message.content or "")
         ).strip(),
         "attachments": [
             getattr(att, "url", "")
             for att in getattr(message, "attachments", [])
         ],
-        "mentions": getattr(message, "_pii_mentions_data", mentions),
+        "mentions": mentions_override or mentions,
         "stickers": stickers,
     }
 

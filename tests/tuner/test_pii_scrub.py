@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from tuner.runner import _scrub_conversations
-from tuner.util.alias import AliasGenerator
+from tuner.util.alias import AliasGenerator, get_meta
 
 
 def test_scrub_conversations_aliases_content():
@@ -18,8 +18,9 @@ def test_scrub_conversations_aliases_content():
     alias_gen = AliasGenerator()
     alias_map = _scrub_conversations([convo], alias_gen)
 
-    assert getattr(message, "_pii_author_alias") != "Alex"
-    assert "<@2>" not in getattr(message, "_pii_clean_content")
-    assert getattr(message, "_pii_mentions_data")[0]["display_name"] != "Mahik"
+    meta = get_meta(message)
+    assert meta["author_alias"] != "Alex"
+    assert "<@2>" not in meta["clean_content"]
+    assert meta["mentions"][0]["display_name"] != "Mahik"
     assert alias_map[getattr(author, "id")] == author.display_name
     assert alias_map[getattr(mention, "id")] == mention.display_name

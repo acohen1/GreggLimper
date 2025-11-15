@@ -15,7 +15,7 @@ from .discord_client import connect_tuner_client
 from .pipeline import TrainingSample
 from .pipeline.moderation import moderate_messages
 from .pipeline.types import SegmentedConversation
-from .util.alias import AliasGenerator, scrub_text
+from .util.alias import AliasGenerator, scrub_text, ensure_meta, get_meta
 from .pipeline.collector import collect_history, persist_raw_conversations
 from .pipeline.formatter import build_prompt_shaped_sample
 from .pipeline.relabel import relabel_segment
@@ -311,7 +311,9 @@ def _scrub_conversations(conversations, alias_generator: AliasGenerator | None) 
             if user_id is not None:
                 alias_map[user_id] = alias
 
-            setattr(message, "_pii_author_alias", alias)
+            meta = ensure_meta(message)
+            meta["author_alias"] = alias
+
             _set_attr_if_possible(author, "display_name", alias)
             _set_attr_if_possible(author, "name", alias)
 
@@ -319,7 +321,7 @@ def _scrub_conversations(conversations, alias_generator: AliasGenerator | None) 
                 value = getattr(message, attr, None)
                 if isinstance(value, str) and value:
                     sanitized = scrub_text(value, alias_generator.alias)
-                    setattr(message, f"_pii_{attr}", sanitized)
+                    meta[attr] = sanitized
 
             mentions = getattr(message, "mentions", None)
             if mentions:
@@ -338,7 +340,7 @@ def _scrub_conversations(conversations, alias_generator: AliasGenerator | None) 
                             "name": mention_alias,
                         }
                     )
-                setattr(message, "_pii_mentions_data", sanitized_mentions)
+                meta["mentions"] = sanitized_mentions
 
     return alias_map
 

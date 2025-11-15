@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from typing import Dict
+from weakref import WeakKeyDictionary
 
 ADJECTIVES = [
     "Amber",
@@ -62,6 +63,10 @@ NOUNS = [
 ]
 
 
+_PII_META_WEAK = WeakKeyDictionary()
+_PII_META_STRONG: Dict[int, dict] = {}
+
+
 class AliasGenerator:
     def __init__(self) -> None:
         self._cache: Dict[int, str] = {}
@@ -91,4 +96,36 @@ def scrub_text(text: str, alias_fn) -> str:
     return MENTION_RE.sub(repl, text)
 
 
-__all__ = ["AliasGenerator", "scrub_text"]
+def ensure_meta(message):
+    meta = getattr(message, "_pii_meta", None)
+    if isinstance(meta, dict):
+        return meta
+    if hasattr(message, "__dict__"):
+        meta = {}
+        setattr(message, "_pii_meta", meta)
+        return meta
+    try:
+        meta = _PII_META_WEAK.get(message)
+    except TypeError:
+        meta = _PII_META_STRONG.get(id(message))
+        if meta is None:
+            meta = {}
+            _PII_META_STRONG[id(message)] = meta
+        return meta
+    if meta is None:
+        meta = {}
+        _PII_META_WEAK[message] = meta
+    return meta
+
+
+def get_meta(message):
+    meta = getattr(message, "_pii_meta", None)
+    if isinstance(meta, dict):
+        return meta
+    try:
+        return _PII_META_WEAK.get(message)
+    except TypeError:
+        return _PII_META_STRONG.get(id(message))
+
+
+__all__ = ["AliasGenerator", "scrub_text", "ensure_meta", "get_meta"]
