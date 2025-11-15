@@ -55,6 +55,7 @@ class Core:
 
         path = Path(file_path)
         if not path.is_file():
+            logger.info("Persona prompt file %s not found; skipping.", path)
             return ""
 
         try:
