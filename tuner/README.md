@@ -50,6 +50,7 @@ Flags override any TOML value (e.g., `--channels`, `--earliest`, `--segment-mode
 - `raw_dump_dir` / `--raw-dump-dir`: where raw Discord transcripts (one JSONL per channel) land. Pair with `--reuse-raw` to skip Discord requests when the cache already exists.
 - `segment_dir` / `--segment-dir`: persistence for refined segments (`segments.json`). Combine with `--reuse-segments` to bypass the LLM refinement step when iterating on downstream stages.
 - `assistant_custom_emojis` / `--assistant-emojis`: whitelist of custom emojis that do **not** disqualify an assistant candidate. The segmenter already rejects speakers who send consecutive replies, emit non-text content (links, attachments, embeds), or use any other custom emoji.
+- Need the whitelist fast? Run `python -m tuner.scripts.list_guild_emojis` (uses `tuner/config.toml` plus `DISCORD_API_TOKEN` by default) or add `--guilds <id ...>` to target specific servers. The script prints each guild’s inventory and automatically rewrites `dataset.assistant_custom_emojis` in your tuner config with every discovered custom emoji.
 
 By default the CLI writes three artifacts under `data/finetune/`:
 
