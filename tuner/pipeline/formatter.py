@@ -16,7 +16,6 @@ ALLOWED_KEYS = {
     "tool_calls",
     "tool_call_id",
     "name",
-    "message_id",
 }
 
 
@@ -36,14 +35,15 @@ async def build_prompt_shaped_sample(
         - isolates the terminal assistant reply as the supervised target
     """
 
-    sanitized_history = _sanitize_history(relabeled_history)
-    target = _find_terminal_assistant(sanitized_history)
+    target = _find_terminal_assistant(relabeled_history)
     if target is None:
         logger.debug(
             "Skipping segment %s because no terminal assistant reply was found",
             segment.message_ids,
         )
         return None
+
+    sanitized_history = _sanitize_history(relabeled_history)
 
     prompt_messages, tools = _build_prompt_header()
     if context_messages:

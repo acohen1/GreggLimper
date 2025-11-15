@@ -13,6 +13,7 @@ from gregg_limper.response.context_messages import build_context_messages
 from .config import DatasetBuildConfig
 from .discord_client import connect_tuner_client
 from .pipeline import TrainingSample
+from .pipeline.types import SegmentedConversation
 from .pipeline.collector import collect_history, persist_raw_conversations
 from .pipeline.formatter import build_prompt_shaped_sample
 from .pipeline.relabel import relabel_segment
