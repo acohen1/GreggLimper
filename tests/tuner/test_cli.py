@@ -39,6 +39,8 @@ token_env = "TEST_TOKEN"
             str(cfg),
             "--max-messages",
             "75",
+            "--segment-concurrency",
+            "12",
             "--max-samples",
             "12",
             "--dry-run",
@@ -60,6 +62,7 @@ token_env = "TEST_TOKEN"
     assert config.segment_decider_model == "seg-model"
     assert config.tool_trigger_model == "tool-model"
     assert config.discord_token == "disc-token"
+    assert config.segment_decider_concurrency == 12
 
 
 def test_resolve_dataset_config_missing_config(tmp_path):

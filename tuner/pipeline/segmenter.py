@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections import Counter
@@ -130,51 +131,98 @@ async def refine_segments_with_llm(
     candidates = list(candidates)
     total_candidates = len(candidates)
     log_interval = max(1, total_candidates // 20) if total_candidates else 1
+    active_decider = decide_segment or default_decider
+    allow_fallback = decide_segment is None and default_decider is not None
 
-    processed = 0
-    for candidate in candidates:
-        records = [
-            message_lookup[mid]
-            for mid in candidate.message_ids
-            if mid in message_lookup
-        ]
-        if len(records) < MIN_SEGMENT_MESSAGES:
-            continue
+    if active_decider:
+        concurrency = max(1, getattr(config, "segment_decider_concurrency", 4))
+        semaphore = asyncio.Semaphore(concurrency)
+        lock = asyncio.Lock()
+        processed = 0
 
-        decider = decide_segment or default_decider
-        if decider:
-            try:
-                decision = await decider(records, allowed)
-            except Exception:
-                logger.warning(
-                    "LLM boundary evaluation failed for channel %s; skipping.",
-                    candidate.channel_id,
-                    exc_info=True,
+        async def mark_progress() -> None:
+            nonlocal processed
+            async with lock:
+                processed += 1
+                if processed % log_interval == 0 or processed == total_candidates:
+                    logger.info(
+                        "Segmenter: refined %d/%d candidates (approved %d)",
+                        processed,
+                        total_candidates,
+                        len(refined),
+                    )
+
+        async def evaluate(candidate: SegmentCandidate) -> None:
+            records = [
+                message_lookup[mid]
+                for mid in candidate.message_ids
+                if mid in message_lookup
+            ]
+            if len(records) < MIN_SEGMENT_MESSAGES:
+                await mark_progress()
+                return
+
+            decision = None
+            async with semaphore:
+                try:
+                    decision = await active_decider(records, allowed)
+                except Exception:
+                    logger.warning(
+                        "LLM boundary evaluation failed for channel %s; skipping.",
+                        candidate.channel_id,
+                        exc_info=True,
+                    )
+                    decision = None
+
+            if decision is None and allow_fallback:
+                decision = _heuristic_decide(records, allowed)
+
+            if decision is not None:
+                refined.append(
+                    SegmentedConversation(
+                        channel_id=candidate.channel_id,
+                        message_ids=decision.message_ids,
+                        assigned_assistant_id=decision.assistant_id,
+                    )
                 )
-                decision = None
-            if decision is None:
+
+            await mark_progress()
+
+        await asyncio.gather(*(evaluate(candidate) for candidate in candidates))
+
+    else:
+        processed = 0
+        for candidate in candidates:
+            records = [
+                message_lookup[mid]
+                for mid in candidate.message_ids
+                if mid in message_lookup
+            ]
+            if len(records) < MIN_SEGMENT_MESSAGES:
+                processed += 1
                 continue
-        else:
+
             decision = _heuristic_decide(records, allowed)
             if decision is None:
+                processed += 1
                 continue
 
-        refined.append(
-            SegmentedConversation(
-                channel_id=candidate.channel_id,
-                message_ids=decision.message_ids,
-                assigned_assistant_id=decision.assistant_id,
+            refined.append(
+                SegmentedConversation(
+                    channel_id=candidate.channel_id,
+                    message_ids=decision.message_ids,
+                    assigned_assistant_id=decision.assistant_id,
+                )
             )
-        )
 
-        processed += 1
-        if processed % log_interval == 0 or processed == total_candidates:
-            logger.info(
-                "Segmenter: refined %d/%d candidates (approved %d)",
-                processed,
-                total_candidates,
-                len(refined),
-            )
+            processed += 1
+            if processed % log_interval == 0 or processed == total_candidates:
+                logger.info(
+                    "Segmenter: refined %d/%d candidates (approved %d)",
+                    processed,
+                    total_candidates,
+                    len(refined),
+                )
 
     logger.info("LLM approved %s segments", len(refined))
     return refined

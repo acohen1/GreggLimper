@@ -15,6 +15,7 @@ DEFAULT_RAW_DUMP_DIR = Path("data/finetune")
 DEFAULT_STATS_PATH = Path("data/finetune/stats.json")
 DEFAULT_CONFIG_PATH = Path("tuner/config.toml")
 DEFAULT_MAX_MESSAGES = 10000
+DEFAULT_SEGMENT_CONCURRENCY = 4
 DEFAULT_MAX_SAMPLES = None
 
 
@@ -118,6 +119,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Model ID to use for segment boundary LLM refinement (overrides config).",
     )
     build_cmd.add_argument(
+        "--segment-concurrency",
+        type=_positive_int,
+        default=None,
+        help="Maximum concurrent LLM refinement calls (overrides config).",
+    )
+    build_cmd.add_argument(
         "--tool-trigger-model",
         type=str,
         default=None,
@@ -203,6 +210,18 @@ def _resolve_dataset_config(
             parser.error("dataset.max_samples must be a positive integer")
     if max_samples is not None and max_samples <= 0:
         parser.error("max samples must be greater than zero")
+
+    seg_concurrency_cfg = dataset_cfg.get("segment_concurrency")
+    segment_concurrency = args.segment_concurrency
+    if segment_concurrency is None and seg_concurrency_cfg is not None:
+        try:
+            segment_concurrency = int(seg_concurrency_cfg)
+        except (TypeError, ValueError) as exc:
+            parser.error("segment_concurrency must be a positive integer")
+    if segment_concurrency is None:
+        segment_concurrency = DEFAULT_SEGMENT_CONCURRENCY
+    if segment_concurrency <= 0:
+        parser.error("segment concurrency must be greater than zero")
     output_path = _coerce_path(
         args.output or dataset_cfg.get("output_path"), DEFAULT_OUTPUT_PATH
     )
@@ -241,6 +260,7 @@ def _resolve_dataset_config(
         dry_run=dry_run,
         segment_decider_model=segment_model,
         tool_trigger_model=tool_trigger_model,
+        segment_decider_concurrency=segment_concurrency,
         print_stats=print_stats,
         stats_path=stats_path,
         discord_token=discord_token,

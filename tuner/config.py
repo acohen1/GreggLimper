@@ -34,6 +34,7 @@ class DatasetBuildConfig:
     dry_run: bool = False
     segment_decider_model: str | None = None
     tool_trigger_model: str | None = None
+    segment_decider_concurrency: int = 4
     print_stats: bool = False
     stats_path: Path | None = None
     discord_token: str | None = None

@@ -6,6 +6,7 @@ allowed_users = [152963974760103936, 144618263010082817]
 earliest = "2024-01-01"
 max_messages = 10000
 max_samples = 50
+segment_concurrency = 4
 output_path = "data/finetune/records.jsonl"
 raw_dump_dir = "data/finetune"
 dry_run = false
