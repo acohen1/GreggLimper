@@ -15,6 +15,7 @@ from .discord_client import connect_tuner_client
 from .pipeline import TrainingSample
 from .pipeline.moderation import moderate_messages
 from .pipeline.types import SegmentedConversation
+from .util.alias import AliasGenerator, scrub_text
 from .pipeline.collector import collect_history, persist_raw_conversations
 from .pipeline.formatter import build_prompt_shaped_sample
 from .pipeline.relabel import relabel_segment
@@ -73,6 +74,9 @@ async def build_dataset(config: DatasetBuildConfig) -> None:
             reuse_raw=config.reuse_raw,
         )
 
+    alias_generator = AliasGenerator(config.pii_salt or "") if config.scrub_pii else None
+    alias_map = _scrub_conversations(raw_conversations, alias_generator)
+
     stats["channels_collected"] = len(raw_conversations)
     stats["messages_collected"] = sum(
         len(convo.messages) for convo in raw_conversations
@@ -90,7 +94,12 @@ async def build_dataset(config: DatasetBuildConfig) -> None:
             f"Hydrated {stats['messages_collected']} messages across {len(raw_conversations)} channels.",
         )
 
-    samples = await _process_conversations(config, stats, raw_conversations)
+    samples = await _process_conversations(
+        config,
+        stats,
+        raw_conversations,
+        alias_map=alias_map,
+    )
 
     if config.dry_run:
         _log_stage(5, "Dry run complete; skipped dataset write.")
@@ -106,6 +115,8 @@ async def _process_conversations(
     config: DatasetBuildConfig,
     stats: dict,
     raw_conversations,
+    *,
+    alias_map: dict[int, str],
 ) -> List[TrainingSample]:
     candidates = propose_segments(raw_conversations)
     raw_candidate_count = len(candidates)
@@ -226,6 +237,9 @@ async def _process_conversations(
                 stats.setdefault("samples_blocked_moderation", 0)
                 stats["samples_blocked_moderation"] += 1
                 continue
+        if alias_map:
+            sample.metadata["assistant_alias"] = alias_map.get(segment.assigned_assistant_id)
+
         samples.append(sample)
 
         if processed % log_interval == 0 or processed == total_segments:
@@ -282,6 +296,53 @@ def _write_dataset(path: Path, samples: List[TrainingSample]) -> None:
             meta_handle.write("\n")
 
     logger.info("Wrote %d samples to %s (metadata at %s)", len(samples), path, metadata_path)
+
+
+def _scrub_conversations(conversations, alias_generator: AliasGenerator | None) -> dict[int, str]:
+    alias_map: dict[int, str] = {}
+    if not alias_generator:
+        return alias_map
+
+    for convo in conversations:
+        for message in convo.messages:
+            author = getattr(message, "author", None)
+            user_id = getattr(author, "id", None)
+            alias = alias_generator.alias(user_id)
+            if user_id is not None:
+                alias_map[user_id] = alias
+
+            _set_attr_if_possible(author, "display_name", alias)
+            _set_attr_if_possible(author, "name", alias)
+
+            for attr in ("clean_content", "content"):
+                value = getattr(message, attr, None)
+                if isinstance(value, str) and value:
+                    _set_attr_if_possible(
+                        message,
+                        attr,
+                        scrub_text(value, alias_generator.alias),
+                    )
+
+            mentions = getattr(message, "mentions", None)
+            if mentions:
+                for mention in mentions:
+                    mention_id = getattr(mention, "id", None)
+                    mention_alias = alias_generator.alias(mention_id)
+                    if mention_id is not None:
+                        alias_map.setdefault(mention_id, mention_alias)
+                    _set_attr_if_possible(mention, "display_name", mention_alias)
+                    _set_attr_if_possible(mention, "name", mention_alias)
+
+    return alias_map
+
+
+def _set_attr_if_possible(obj, attr: str, value: str) -> None:
+    if obj is None:
+        return
+    try:
+        setattr(obj, attr, value)
+    except (AttributeError, TypeError):
+        pass
 
 
 def _emit_stats(stats: dict, *, config: DatasetBuildConfig) -> None:

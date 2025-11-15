@@ -160,6 +160,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Custom emoji tokens permitted in assistant turns (overrides config).",
     )
     build_cmd.add_argument(
+        "--scrub-pii",
+        action="store_true",
+        help="Anonymize user identifiers in the exported dataset.",
+    )
+    build_cmd.add_argument(
+        "--pii-salt",
+        type=str,
+        default=None,
+        help="Secret salt used to generate deterministic aliases when --scrub-pii is enabled.",
+    )
+    build_cmd.add_argument(
         "--print-stats",
         action="store_true",
         help="Print aggregated run statistics after completion (overrides config).",
@@ -283,6 +294,11 @@ def _resolve_dataset_config(
             "Missing tool trigger model. Provide --tool-trigger-model or models.tool_trigger in config.toml."
         )
 
+    scrub_pii = args.scrub_pii or bool(dataset_cfg.get("scrub_pii", False))
+    pii_salt = args.pii_salt or dataset_cfg.get("pii_salt")
+    if scrub_pii and not pii_salt:
+        parser.error("PII scrubbing enabled but no salt provided. Set --pii-salt or dataset.pii_salt.")
+
     discord_token = _resolve_discord_token(args.discord_token, discord_cfg)
     if not discord_token:
         parser.error(
@@ -301,6 +317,8 @@ def _resolve_dataset_config(
         segment_decider_model=segment_model,
         tool_trigger_model=tool_trigger_model,
         moderation_model=moderation_model,
+        scrub_pii=scrub_pii,
+        pii_salt=pii_salt,
         segment_decider_concurrency=segment_concurrency,
         allowed_assistant_custom_emojis=assistant_emojis,
         segment_dump_dir=segment_dump_dir,
