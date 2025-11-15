@@ -13,6 +13,7 @@ from gregg_limper.response.context_messages import build_context_messages
 from .config import DatasetBuildConfig
 from .discord_client import connect_tuner_client
 from .pipeline import TrainingSample
+from .pipeline.moderation import moderate_messages
 from .pipeline.types import SegmentedConversation
 from .pipeline.collector import collect_history, persist_raw_conversations
 from .pipeline.formatter import build_prompt_shaped_sample
@@ -180,6 +181,7 @@ async def _process_conversations(
         stats["samples_prepared"] = 0
         return samples
 
+    moderation_model = config.moderation_model
     log_interval = max(1, total_segments // 10)
     for processed, segment in enumerate(refined_segments, start=1):
         history_messages = await relabel_segment(
@@ -213,6 +215,17 @@ async def _process_conversations(
         )
         if sample is None:
             continue
+
+        if moderation_model:
+            keep = await moderate_messages(sample.messages, model=moderation_model)
+            if not keep:
+                logger.info(
+                    "Moderation flagged segment %s; dropping sample.",
+                    segment.message_ids,
+                )
+                stats.setdefault("samples_blocked_moderation", 0)
+                stats["samples_blocked_moderation"] += 1
+                continue
         samples.append(sample)
 
         if processed % log_interval == 0 or processed == total_segments:

@@ -6,10 +6,12 @@ from .types import (
     SegmentedConversation,
     TrainingSample,
 )
+from .moderation import moderate_messages
 
 __all__ = [
     "RawConversation",
     "SegmentCandidate",
     "SegmentedConversation",
     "TrainingSample",
+    "moderate_messages",
 ]

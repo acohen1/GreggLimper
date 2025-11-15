@@ -132,6 +132,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Model ID used when confirming synthetic retrieve_context triggers (overrides config).",
     )
     build_cmd.add_argument(
+        "--moderation-model",
+        type=str,
+        default=None,
+        help="OpenAI model ID used to screen formatted samples (e.g., omni-moderation-2024-09-26).",
+    )
+    build_cmd.add_argument(
         "--segment-dir",
         type=Path,
         default=None,
@@ -269,6 +275,7 @@ def _resolve_dataset_config(
 
     segment_model = args.segment_model or models_cfg.get("segment")
     tool_trigger_model = args.tool_trigger_model or models_cfg.get("tool_trigger")
+    moderation_model = args.moderation_model or models_cfg.get("moderation")
     if not segment_model:
         parser.error("Missing segment model. Provide --segment-model or models.segment in config.toml.")
     if not tool_trigger_model:
@@ -293,6 +300,7 @@ def _resolve_dataset_config(
         dry_run=dry_run,
         segment_decider_model=segment_model,
         tool_trigger_model=tool_trigger_model,
+        moderation_model=moderation_model,
         segment_decider_concurrency=segment_concurrency,
         allowed_assistant_custom_emojis=assistant_emojis,
         segment_dump_dir=segment_dump_dir,

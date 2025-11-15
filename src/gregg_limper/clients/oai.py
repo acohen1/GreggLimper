@@ -169,3 +169,8 @@ async def chat_full(
         if tool_choice:
             kwargs["tool_choice"] = tool_choice
     return await aoai.chat.completions.create(**kwargs)
+
+
+async def moderate(input: str, *, model: str) -> dict:
+    """Call OpenAI's moderation endpoint."""
+    return await aoai.moderations.create(model=model, input=input)
