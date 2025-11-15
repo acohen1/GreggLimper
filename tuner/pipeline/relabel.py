@@ -33,7 +33,24 @@ async def relabel_segment(
             logger.debug("Segment message %s missing from lookup", message_id)
             continue
 
-        cache_entry = await format_for_cache(message)
+        try:
+            cache_entry = await format_for_cache(message)
+        except Exception as exc:  # pragma: no cover
+            logger.warning(
+                "Formatter failed for message %s (segment %s): %s",
+                message_id,
+                segment.channel_id,
+                exc,
+            )
+            relabeled.append(
+                _fallback_entry(
+                    message=message,
+                    assigned_assistant_id=segment.assigned_assistant_id,
+                    message_id=message_id,
+                    reason=str(exc),
+                )
+            )
+            continue
         serialized = serialize_cache(cache_entry, mode="llm")
         fragments = serialized.get("fragments", [])
         author_name = serialized.get("author") or getattr(
@@ -99,6 +116,44 @@ def _render_fragments(fragments: List[dict]) -> str:
             lines.append(rendered)
 
     return "\n".join(lines).strip()
+
+
+def _author_name(message: Message) -> str:
+    name = getattr(message.author, "display_name", None) or getattr(
+        message.author, "name", None
+    )
+    return name or "Unknown speaker"
+
+
+def _fallback_entry(
+    *,
+    message: Message,
+    assigned_assistant_id: int,
+    message_id: int,
+    reason: str,
+) -> dict:
+    role = "assistant" if message.author.id == assigned_assistant_id else "user"
+    author_name = _author_name(message)
+    raw_text = (
+        getattr(message, "clean_content", "") or getattr(message, "content", "")
+    ).strip()
+    if role == "assistant":
+        body = raw_text or "Assistant shared content that could not be processed."
+    else:
+        body = (
+            f"{author_name} said:\n{raw_text}"
+            if raw_text
+            else f"{author_name} shared content that could not be processed."
+        )
+    trimmed_reason = reason.strip()
+    if trimmed_reason:
+        body = f"{body}\n\n[Formatter error: {trimmed_reason}]"
+    return {
+        "role": role,
+        "content": body,
+        "author_id": message.author.id,
+        "message_id": message_id,
+    }
 
 
 __all__ = ["relabel_segment"]
