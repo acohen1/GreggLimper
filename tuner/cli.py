@@ -2,11 +2,20 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
+import tomllib
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable, List
 
 from .config import DatasetBuildConfig
 from .runner import build_dataset
+
+DEFAULT_OUTPUT_PATH = Path("data/finetune/records.jsonl")
+DEFAULT_RAW_DUMP_DIR = Path("data/finetune")
+DEFAULT_STATS_PATH = Path("data/finetune/stats.json")
+DEFAULT_CONFIG_PATH = Path("tuner/config.toml")
+DEFAULT_MAX_MESSAGES = 10000
+DEFAULT_MAX_SAMPLES = None
 
 
 def _positive_int(value: str) -> int:
@@ -45,49 +54,91 @@ def build_parser() -> argparse.ArgumentParser:
         help="Collect, segment, and format training data from Discord history.",
     )
     build_cmd.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to tuner config TOML (defaults to tuner/config.toml when present).",
+    )
+    build_cmd.add_argument(
         "--channels",
         "-c",
         nargs="+",
         type=int,
-        required=True,
-        help="Discord channel IDs to ingest.",
+        default=None,
+        help="Discord channel IDs to ingest (overrides config).",
     )
     build_cmd.add_argument(
         "--earliest",
         type=str,
-        required=True,
-        help="ISO8601 timestamp or YYYY-MM-DD for the earliest message to include.",
+        default=None,
+        help="ISO8601 timestamp or YYYY-MM-DD for the earliest message to include (overrides config).",
     )
     build_cmd.add_argument(
         "--allowed-users",
         "-u",
         nargs="+",
         type=str,
-        help="Discord user IDs permitted in the dataset (space separated).",
+        default=None,
+        help="Discord user IDs permitted in the dataset (space separated, overrides config).",
     )
     build_cmd.add_argument(
         "--output",
         "-o",
         type=Path,
-        default=Path("finetune-data/records.jsonl"),
-        help="Destination JSONL file for the dataset.",
+        default=None,
+        help="Destination JSONL file for the dataset (overrides config).",
     )
     build_cmd.add_argument(
         "--raw-dump-dir",
         type=Path,
-        default=Path("finetune-data/raw"),
-        help="Directory to store raw channel transcripts for auditing.",
+        default=None,
+        help="Directory to store raw channel transcripts for auditing (overrides config).",
     )
     build_cmd.add_argument(
         "--max-messages",
         type=_positive_int,
-        default=10000,
-        help="Safety ceiling for raw messages fetched per channel.",
+        default=None,
+        help="Safety ceiling for raw messages fetched per channel (overrides config).",
+    )
+    build_cmd.add_argument(
+        "--max-samples",
+        type=_positive_int,
+        default=None,
+        help="Limit the number of formatted samples written (overrides config).",
     )
     build_cmd.add_argument(
         "--dry-run",
         action="store_true",
-        help="Collect stats without writing any dataset artifacts.",
+        help="Collect stats without writing any dataset artifacts (overrides config).",
+    )
+    build_cmd.add_argument(
+        "--segment-model",
+        type=str,
+        default=None,
+        help="Model ID to use for segment boundary LLM refinement (overrides config).",
+    )
+    build_cmd.add_argument(
+        "--tool-trigger-model",
+        type=str,
+        default=None,
+        help="Model ID used when confirming synthetic retrieve_context triggers (overrides config).",
+    )
+    build_cmd.add_argument(
+        "--print-stats",
+        action="store_true",
+        help="Print aggregated run statistics after completion (overrides config).",
+    )
+    build_cmd.add_argument(
+        "--stats-file",
+        type=Path,
+        default=None,
+        help="JSON file to write aggregated run statistics (overrides config).",
+    )
+    build_cmd.add_argument(
+        "--discord-token",
+        type=str,
+        default=None,
+        help="Discord API token used to hydrate history (overrides discord.token_env).",
     )
 
     return parser
@@ -98,19 +149,154 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     if args.command == "build-dataset":
-        config = DatasetBuildConfig(
-            channel_ids=args.channels,
-            earliest_timestamp=args.earliest,
-            allowed_user_ids=_parse_allowed_users(args.allowed_users),
-            output_path=args.output,
-            raw_dump_dir=args.raw_dump_dir,
-            max_messages=args.max_messages,
-            dry_run=args.dry_run,
-        )
+        config = _resolve_dataset_config(args, parser)
         asyncio.run(build_dataset(config))
         return
 
     parser.print_help()
 
 
-__all__ = ["main", "build_parser"]
+def _resolve_dataset_config(
+    args: argparse.Namespace, parser: argparse.ArgumentParser
+) -> DatasetBuildConfig:
+    file_config = _load_file_config(args.config, parser)
+    dataset_cfg = file_config.get("dataset", {})
+    models_cfg = file_config.get("models", {})
+    discord_cfg = file_config.get("discord", {})
+
+    try:
+        channels = args.channels or _coerce_int_list(
+            dataset_cfg.get("channels"), "dataset.channels"
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+    if not channels:
+        parser.error(
+            "Missing channel IDs. Supply --channels or set dataset.channels in config.toml."
+        )
+
+    earliest = args.earliest or dataset_cfg.get("earliest")
+    if not earliest:
+        parser.error("Missing earliest timestamp. Supply --earliest or dataset.earliest in config.toml.")
+
+    if args.allowed_users:
+        allowed_user_ids = _parse_allowed_users(args.allowed_users)
+    else:
+        try:
+            allowed_user_ids = set(
+                _coerce_int_list(dataset_cfg.get("allowed_users"), "dataset.allowed_users")
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
+
+    max_messages = (
+        args.max_messages
+        if args.max_messages is not None
+        else int(dataset_cfg.get("max_messages", DEFAULT_MAX_MESSAGES))
+    )
+    max_samples_cfg = dataset_cfg.get("max_samples")
+    max_samples = args.max_samples
+    if max_samples is None and max_samples_cfg is not None:
+        try:
+            max_samples = int(max_samples_cfg)
+        except (TypeError, ValueError) as exc:
+            parser.error("dataset.max_samples must be a positive integer")
+    if max_samples is not None and max_samples <= 0:
+        parser.error("max samples must be greater than zero")
+    output_path = _coerce_path(
+        args.output or dataset_cfg.get("output_path"), DEFAULT_OUTPUT_PATH
+    )
+    raw_dump_dir = _coerce_path(
+        args.raw_dump_dir or dataset_cfg.get("raw_dump_dir"), DEFAULT_RAW_DUMP_DIR
+    )
+    stats_path = _coerce_path(
+        args.stats_file or dataset_cfg.get("stats_path"), DEFAULT_STATS_PATH
+    )
+    dry_run = args.dry_run or bool(dataset_cfg.get("dry_run", False))
+    print_stats = args.print_stats or bool(dataset_cfg.get("print_stats", False))
+
+    segment_model = args.segment_model or models_cfg.get("segment")
+    tool_trigger_model = args.tool_trigger_model or models_cfg.get("tool_trigger")
+    if not segment_model:
+        parser.error("Missing segment model. Provide --segment-model or models.segment in config.toml.")
+    if not tool_trigger_model:
+        parser.error(
+            "Missing tool trigger model. Provide --tool-trigger-model or models.tool_trigger in config.toml."
+        )
+
+    discord_token = _resolve_discord_token(args.discord_token, discord_cfg)
+    if not discord_token:
+        parser.error(
+            "Missing Discord token. Provide --discord-token, discord.token, or ensure discord.token_env points to a populated env var."
+        )
+
+    return DatasetBuildConfig(
+        channel_ids=channels,
+        earliest_timestamp=earliest,
+        allowed_user_ids=allowed_user_ids,
+        output_path=output_path,
+        raw_dump_dir=raw_dump_dir,
+        max_messages=max_messages,
+        max_samples=max_samples,
+        dry_run=dry_run,
+        segment_decider_model=segment_model,
+        tool_trigger_model=tool_trigger_model,
+        print_stats=print_stats,
+        stats_path=stats_path,
+        discord_token=discord_token,
+    )
+
+
+def _coerce_int_list(value: Any, label: str) -> List[int]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        result: list[int] = []
+        for item in value:
+            try:
+                result.append(int(item))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"{label} contains invalid integer value '{item}'"
+                ) from exc
+        return result
+    raise ValueError(f"{label} must be a list of integers in config")
+
+
+def _coerce_path(value: Any, default: Path) -> Path:
+    if value is None:
+        return default
+    if isinstance(value, Path):
+        return value
+    return Path(str(value))
+
+
+def _load_file_config(
+    path: Path | None, parser: argparse.ArgumentParser
+) -> dict[str, Any]:
+    if path:
+        if not path.is_file():
+            parser.error(f"Config file {path} does not exist.")
+        return _read_toml(path)
+
+    if DEFAULT_CONFIG_PATH.is_file():
+        return _read_toml(DEFAULT_CONFIG_PATH)
+    return {}
+
+
+def _read_toml(path: Path) -> dict[str, Any]:
+    with path.open("rb") as handle:
+        data = tomllib.load(handle)
+    return data
+
+
+def _resolve_discord_token(cli_token: str | None, discord_cfg: dict[str, Any]) -> str | None:
+    if cli_token:
+        return cli_token
+    token_env = discord_cfg.get("token_env", "DISCORD_API_TOKEN")
+    if token_env:
+        return os.getenv(str(token_env))
+    return None
+
+
+__all__ = ["main", "build_parser", "_resolve_dataset_config"]

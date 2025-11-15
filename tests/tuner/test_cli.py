@@ -1,26 +1,74 @@
 from pathlib import Path
 
-from tuner.cli import build_parser
+import pytest
+
+from tuner.cli import build_parser, _resolve_dataset_config
 
 
-def test_build_parser_parses_dataset_args(tmp_path):
+def test_resolve_dataset_config_from_toml(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        """
+[dataset]
+channels = [123, 456]
+allowed_users = [10, 11]
+earliest = "2024-01-01"
+max_messages = 50
+max_samples = 5
+output_path = "custom.jsonl"
+raw_dump_dir = "raw"
+dry_run = true
+print_stats = true
+stats_path = "stats.json"
+
+[models]
+segment = "seg-model"
+tool_trigger = "tool-model"
+
+[discord]
+token_env = "TEST_TOKEN"
+"""
+    )
+    monkeypatch.setenv("TEST_TOKEN", "disc-token")
+
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "build-dataset",
+            "--config",
+            str(cfg),
+            "--max-messages",
+            "75",
+            "--max-samples",
+            "12",
+            "--dry-run",
+        ]
+    )
+
+    config = _resolve_dataset_config(args, parser)
+
+    assert config.channel_ids == [123, 456]
+    assert config.allowed_user_ids == {10, 11}
+    assert config.earliest_timestamp == "2024-01-01"
+    assert config.max_messages == 75
+    assert config.max_samples == 12
+    assert config.dry_run is True
+    assert config.print_stats is True
+    assert config.output_path == Path("custom.jsonl")
+    assert config.raw_dump_dir == Path("raw")
+    assert config.stats_path == Path("stats.json")
+    assert config.segment_decider_model == "seg-model"
+    assert config.tool_trigger_model == "tool-model"
+    assert config.discord_token == "disc-token"
+
+
+def test_resolve_dataset_config_missing_config(tmp_path):
     parser = build_parser()
     args = parser.parse_args([
         "build-dataset",
-        "--channels", "123", "456",
-        "--earliest", "2024-01-01",
-        "--allowed-users", "10", "11",
-        "--output", str(tmp_path / "out.jsonl"),
-        "--max-messages", "50",
-        "--raw-dump-dir", str(tmp_path / "raw"),
-        "--dry-run",
+        "--config",
+        str(tmp_path / "missing.toml"),
     ])
 
-    assert args.command == "build-dataset"
-    assert args.channels == [123, 456]
-    assert args.earliest == "2024-01-01"
-    assert args.allowed_users == ["10", "11"]
-    assert Path(args.output) == tmp_path / "out.jsonl"
-    assert Path(args.raw_dump_dir) == tmp_path / "raw"
-    assert args.max_messages == 50
-    assert args.dry_run is True
+    with pytest.raises(SystemExit):
+        _resolve_dataset_config(args, parser)

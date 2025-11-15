@@ -1,0 +1,21 @@
+# Copy this file to tuner/config.toml and tailor values for your environment.
+
+[dataset]
+channels = [123456789012345678, 987654321098765432]
+allowed_users = [152963974760103936, 144618263010082817]
+earliest = "2024-01-01"
+max_messages = 10000
+max_samples = 50
+output_path = "data/finetune/records.jsonl"
+raw_dump_dir = "data/finetune"
+dry_run = false
+print_stats = true
+stats_path = "data/finetune/stats.json"
+
+[models]
+segment = "gpt-5-nano-2025-08-07"
+tool_trigger = "gpt-5-nano-2025-08-07"
+
+[discord]
+# Keep the token in an environment variable--just reference that env here
+token_env = "DISCORD_API_TOKEN"

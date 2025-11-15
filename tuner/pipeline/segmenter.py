@@ -5,12 +5,12 @@ import logging
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Awaitable, Callable, Dict, Iterable, List, Sequence
+from functools import partial
+from typing import Awaitable, Callable, Dict, Iterable, List, Sequence, cast
 
 from discord import Message
 
 from gregg_limper.clients import oai
-from gregg_limper.config import core
 
 from ..config import DatasetBuildConfig
 from .types import RawConversation, SegmentCandidate, SegmentedConversation
@@ -108,7 +108,14 @@ async def refine_segments_with_llm(
     """
 
     refined: list[SegmentedConversation] = []
-    allowed = set(config.allowed_user_ids)
+    allowed = set(getattr(config, "allowed_user_ids", set()))
+    default_decider: SegmentDecider | None = None
+    model_id = getattr(config, "segment_decider_model", None)
+    if model_id:
+        default_decider = cast(
+            SegmentDecider,
+            partial(_llm_decide, model_id=model_id),
+        )
 
     for candidate in candidates:
         records = [
@@ -119,23 +126,23 @@ async def refine_segments_with_llm(
         if len(records) < MIN_SEGMENT_MESSAGES:
             continue
 
-        decision = None
-        decider = decide_segment or _llm_decide
+        decider = decide_segment or default_decider
         if decider:
             try:
                 decision = await decider(records, allowed)
             except Exception:
                 logger.warning(
-                    "LLM boundary evaluation failed for channel %s; using heuristics.",
+                    "LLM boundary evaluation failed for channel %s; skipping.",
                     candidate.channel_id,
                     exc_info=True,
                 )
-
-        if decision is None:
+                decision = None
+            if decision is None:
+                continue
+        else:
             decision = _heuristic_decide(records, allowed)
-
-        if decision is None:
-            continue
+            if decision is None:
+                continue
 
         refined.append(
             SegmentedConversation(
@@ -158,6 +165,8 @@ class _SegmentDecision:
 async def _llm_decide(
     messages: Sequence[Message],
     allowed_user_ids: Sequence[int],
+    *,
+    model_id: str,
 ) -> _SegmentDecision | None:
     allowed_text = ", ".join(str(uid) for uid in sorted(allowed_user_ids)) or "ANY"
     transcript = _format_for_llm(messages)
@@ -184,7 +193,7 @@ async def _llm_decide(
                 ),
             },
         ],
-        model=core.MSG_MODEL_ID,
+        model=model_id,
     )
 
     payload = _parse_json_response(response)

@@ -5,21 +5,26 @@ import logging
 from pathlib import Path
 from typing import Dict, List
 
-from discord import Client, Message
+from discord import Message
 
-from gregg_limper.clients import disc
 from gregg_limper.response.context import gather_context
 from gregg_limper.response.context_messages import build_context_messages
 
 from .config import DatasetBuildConfig
+from .discord_client import connect_tuner_client
 from .pipeline import TrainingSample
 from .pipeline.collector import collect_history, persist_raw_conversations
 from .pipeline.formatter import build_prompt_shaped_sample
 from .pipeline.relabel import relabel_segment
 from .pipeline.segmenter import propose_segments, refine_segments_with_llm
-from .pipeline.tool_synth import inject_synthetic_rag_blocks
+from .pipeline.tool_synth import (
+    build_llm_tool_trigger_decider,
+    inject_synthetic_rag_blocks,
+)
 
 logger = logging.getLogger(__name__)
+
+TOTAL_PROGRESS_STEPS = 5
 
 
 async def build_dataset(config: DatasetBuildConfig) -> None:
@@ -35,28 +40,107 @@ async def build_dataset(config: DatasetBuildConfig) -> None:
     """
 
     logger.info("Starting dataset build for %d channels", len(config.channel_ids))
-    client: Client = disc.bot
+    if not config.discord_token:
+        raise ValueError("Discord API token is required to hydrate history.")
+    stats = {
+        "channels_requested": len(config.channel_ids),
+        "channels_collected": 0,
+        "messages_collected": 0,
+        "segment_candidates": 0,
+        "segments_approved": 0,
+        "segments_rejected": 0,
+        "synthetic_tool_calls": 0,
+        "samples_prepared": 0,
+        "sample_cap": config.max_samples,
+        "dry_run": config.dry_run,
+        "output_path": str(config.output_path),
+        "raw_dump_dir": str(config.raw_dump_dir),
+    }
 
-    raw_conversations = await collect_history(client=client, config=config)
-    logger.info("Collected %d channel histories", len(raw_conversations))
-    persist_raw_conversations(raw_conversations, destination=config.raw_dump_dir)
+    if config.max_samples:
+        logger.info("Sample cap enabled: %d max supervised records", config.max_samples)
 
+    async with connect_tuner_client(config.discord_token) as client:
+        raw_conversations = await collect_history(client=client, config=config)
+        persist_raw_conversations(raw_conversations, destination=config.raw_dump_dir)
+        stats["channels_collected"] = len(raw_conversations)
+        stats["messages_collected"] = sum(
+            len(convo.messages) for convo in raw_conversations
+        )
+        _log_stage(
+            1,
+            f"Hydrated {stats['messages_collected']} messages across {len(raw_conversations)} channels.",
+        )
+
+        samples = await _process_conversations(config, stats, raw_conversations)
+
+    if config.dry_run:
+        _log_stage(5, "Dry run complete; skipped dataset write.")
+        _emit_stats(stats, config=config)
+        return
+
+    _write_dataset(config.output_path, samples)
+    _log_stage(5, f"Wrote {len(samples)} samples to {config.output_path}")
+    _emit_stats(stats, config=config)
+
+
+async def _process_conversations(
+    config: DatasetBuildConfig,
+    stats: dict,
+    raw_conversations,
+) -> List[TrainingSample]:
     candidates = propose_segments(raw_conversations)
-    logger.info("Generated %d segment candidates", len(candidates))
+    stats["segment_candidates"] = len(candidates)
+    _log_stage(
+        2,
+        f"Chunked conversations into {stats['segment_candidates']} segment candidates.",
+    )
 
     message_lookup = _index_messages(raw_conversations)
     refined_segments = await refine_segments_with_llm(
         candidates, message_lookup=message_lookup, config=config
     )
+    stats["segments_approved"] = len(refined_segments)
+    stats["segments_rejected"] = max(
+        stats["segment_candidates"] - stats["segments_approved"], 0
+    )
+    approval_rate = (
+        (stats["segments_approved"] / stats["segment_candidates"]) * 100
+        if stats["segment_candidates"]
+        else 0
+    )
+    _log_stage(
+        3,
+        "LLM approved %d/%d segments (%.1f%%)."
+        % (
+            stats["segments_approved"],
+            stats["segment_candidates"],
+            approval_rate,
+        ),
+    )
+
+    tool_decider = (
+        build_llm_tool_trigger_decider(config.tool_trigger_model)
+        if config.tool_trigger_model
+        else None
+    )
 
     samples: List[TrainingSample] = []
-    for segment in refined_segments:
+    total_segments = len(refined_segments)
+    if total_segments == 0:
+        _log_stage(4, "No eligible segments after refinement.")
+        stats["samples_prepared"] = 0
+        return samples
+
+    log_interval = max(1, total_segments // 10)
+    for processed, segment in enumerate(refined_segments, start=1):
         history_messages = await relabel_segment(
             segment, message_lookup=message_lookup
         )
-        augmented_history, synthetic_count = inject_synthetic_rag_blocks(
-            history_messages
+        augmented_history, synthetic_count = await inject_synthetic_rag_blocks(
+            history_messages, decider=tool_decider
         )
+        stats["synthetic_tool_calls"] += synthetic_count
         last_message = message_lookup.get(segment.message_ids[-1])
         if last_message is None:
             logger.warning(
@@ -79,15 +163,28 @@ async def build_dataset(config: DatasetBuildConfig) -> None:
             synthetic_tool_uses=synthetic_count,
             context_messages=context_messages,
         )
+        if sample is None:
+            continue
         samples.append(sample)
 
-    if config.dry_run:
-        logger.info(
-            "Dry run complete; prepared %d samples but skipped writing.", len(samples)
-        )
-        return
+        if processed % log_interval == 0 or processed == total_segments:
+            _log_sample_progress(processed, total_segments, len(samples), config.max_samples)
 
-    _write_dataset(config.output_path, samples)
+        if config.max_samples is not None and len(samples) >= config.max_samples:
+            logger.info(
+                "Reached max sample cap (%d); stopping collection.",
+                config.max_samples,
+            )
+            break
+
+    stats["samples_prepared"] = len(samples)
+    cap_note = f" (cap {config.max_samples})" if config.max_samples else ""
+    _log_stage(
+        4,
+        f"Built {stats['samples_prepared']} supervised samples{cap_note} with {stats['synthetic_tool_calls']} synthetic tool calls.",
+    )
+
+    return samples
 
 
 def _index_messages(conversations) -> Dict[int, Message]:
@@ -104,12 +201,53 @@ def _write_dataset(path: Path, samples: List[TrainingSample]) -> None:
         for sample in samples:
             handle.write(
                 json.dumps(
-                    {"messages": sample.messages, "metadata": sample.metadata},
+                    {
+                        "messages": sample.messages,
+                        "parallel_tool_calls": sample.parallel_tool_calls,
+                        "tools": sample.tools,
+                        "metadata": sample.metadata,
+                    },
                     ensure_ascii=False,
                 )
             )
             handle.write("\n")
     logger.info("Wrote %d samples to %s", len(samples), path)
+
+
+def _emit_stats(stats: dict, *, config: DatasetBuildConfig) -> None:
+    if not config.print_stats and not config.stats_path:
+        return
+
+    payload = json.dumps(stats, indent=2, ensure_ascii=False)
+    if config.print_stats:
+        logger.info("Dataset build statistics:\n%s", payload)
+    if config.stats_path:
+        config.stats_path.parent.mkdir(parents=True, exist_ok=True)
+        config.stats_path.write_text(payload, encoding="utf-8")
+        logger.info("Wrote stats to %s", config.stats_path)
+
+
+def _log_stage(stage_idx: int, message: str) -> None:
+    percent = int(stage_idx / TOTAL_PROGRESS_STEPS * 100)
+    logger.info(
+        "[Progress %d/%d | %d%%] %s",
+        stage_idx,
+        TOTAL_PROGRESS_STEPS,
+        percent,
+        message,
+    )
+
+
+def _log_sample_progress(processed: int, total: int, built: int, cap: int | None) -> None:
+    percent = (processed / total) * 100 if total else 100
+    logger.info(
+        "Building samples: %d/%d segments processed (%.1f%%), %d samples ready%s.",
+        processed,
+        total,
+        percent,
+        built,
+        f" / cap {cap}" if cap is not None else "",
+    )
 
 
 __all__ = ["build_dataset"]

@@ -18,6 +18,7 @@ Discord assistant for knowledge retrieval and response generation. Gregg Limper 
   - [Configuration](#configuration)
   - [Run the Bot](#run-the-bot)
   - [Run the Test Suite](#run-the-test-suite)
+- [Tuner Package](#tuner-package)
 - [Slash Commands](#slash-commands)
 - [Configuration Reference](#configuration-reference)
 - [Handler Registries](#handler-registries)
@@ -111,6 +112,7 @@ The cache relies on the formatter to transform raw Discord messages into stable 
 │   ├── response/          # Prompt assembly and completion orchestration
 │   ├── tools/             # Tool registry, execution helpers, and handlers
 │   └── maintenance.py     # Shared utilities for background tasks
+├── tuner/                 # Standalone finetuner CLI (see tuner/README.md)
 ├── tests/                 # Pytest suites covering cache, formatter, tools, RAG, commands
 ├── docs/                  # Milvus GPU setup and restart notebooks
 ├── data/                  # Default SQLite DB and memo snapshots (development)
@@ -171,6 +173,16 @@ pytest
 ```
 
 Pytest targets are organized by subsystem (`tests/cache`, `tests/formatter`, `tests/rag`, etc.), and fixtures in `tests/conftest.py` provide Discord stubs plus temporary storage paths.
+
+## Tuner Package
+
+Need a supervised dataset that mirrors Gregg Limper's prompt stack? The repo ships with a standalone tuner CLI under [`tuner/`](tuner/README.md). It collects Discord history (respecting whitelisted speakers and earliest cutoffs), injects synthetic `retrieve_context` calls, and exports JSONL records that match OpenAI's chat finetune schema.
+
+- Copy `tuner/config.sample.toml` to `tuner/config.toml` and fill in the `[dataset]`, `[models]`, and `[discord]` sections. Bot secrets stay in `.env`; the TOML captures run profiles (channels, allowed users, `max_messages`, `max_samples`, output paths, etc.).
+- Run `python -m tuner build-dataset` (or pass `--config path/to/config.toml`). CLI flags override any TOML value when you need to experiment with alternate slices.
+- Progress logs report per-channel hydration, LLM segment approvals, synthetic tool counts, and the final supervised sample tally so you can monitor long-running builds.
+
+See [tuner/README.md](tuner/README.md) for full configuration and schema details.
 
 ## Slash Commands
 

@@ -52,12 +52,16 @@ class TrainingSample:
     Final, prompt-shaped dataset record ready for JSONL export.
 
     Attributes:
-        messages: List of role/content dicts that mirror debug_messages.json.
+        messages: ChatML-style conversation matching OpenAI finetune schema.
         metadata: Trace data (segment id, participants, synthetic flags).
+        tools: Tool definitions announced to the model.
+        parallel_tool_calls: Whether parallel tool calling is permitted.
     """
 
     messages: List[dict]
     metadata: dict[str, object] = field(default_factory=dict)
+    tools: List[dict] = field(default_factory=list)
+    parallel_tool_calls: bool = False
 
 
 __all__ = [

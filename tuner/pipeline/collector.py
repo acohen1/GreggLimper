@@ -38,11 +38,25 @@ async def collect_history(
         if channel is None:
             continue
 
+        channel_name = getattr(channel, "name", channel_id)
+        logger.info(
+            "Collecting channel %s (cutoff %s, limit %s)",
+            channel_name,
+            cutoff.isoformat(),
+            config.max_messages,
+        )
         messages = await _fetch_channel_history(
             channel,
             limit=config.max_messages,
             cutoff=cutoff,
             allowed_user_ids=allowed,
+            channel_label=str(channel_name),
+        )
+        logger.info(
+            "Collected %s messages from #%s (%s)",
+            len(messages),
+            channel_name,
+            channel.id,
         )
         conversations.append(
             RawConversation(
@@ -98,9 +112,14 @@ async def _fetch_channel_history(
     limit: int,
     cutoff: datetime,
     allowed_user_ids: Sequence[int],
+    channel_label: str,
+    heartbeat_interval: int = 1000,
 ) -> List[Message]:
     keep_all = not allowed_user_ids
     rows: list[Message] = []
+    total_window = max(
+        (datetime.now(timezone.utc) - cutoff).total_seconds(), 1.0
+    )
     async for message in channel.history(limit=limit, oldest_first=True):
         created_at = _ensure_timezone(message.created_at)
         if created_at < cutoff:
@@ -109,12 +128,16 @@ async def _fetch_channel_history(
         if not keep_all and author_id not in allowed_user_ids:
             continue
         rows.append(message)
-    logger.info(
-        "Collected %s messages from #%s (%s)",
-        len(rows),
-        getattr(channel, "name", channel.id),
-        channel.id,
-    )
+        if heartbeat_interval and len(rows) % heartbeat_interval == 0:
+            progress = min(
+                max((created_at - cutoff).total_seconds() / total_window, 0.0), 1.0
+            )
+            logger.info(
+                "Channel %s: fetched %d messages (~%d%% of cutoff window)",
+                channel_label,
+                len(rows),
+                int(progress * 100),
+            )
     return rows
 
 

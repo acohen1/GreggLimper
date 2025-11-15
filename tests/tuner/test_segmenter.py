@@ -67,3 +67,50 @@ async def test_refine_segments_with_llm_uses_custom_decider():
     assert len(refined) == 1
     assert refined[0].assigned_assistant_id == 200
     assert refined[0].message_ids == [1, 2, 3, 4]
+
+
+@pytest.mark.asyncio
+async def test_refine_segments_drops_when_decider_rejects():
+    messages = [
+        _make_message(1, 100, 0),
+        _make_message(2, 200, 1),
+        _make_message(3, 200, 2),
+        _make_message(4, 100, 3),
+    ]
+    message_lookup = {msg.id: msg for msg in messages}
+    candidate = SegmentCandidate(channel_id=99, message_ids=[msg.id for msg in messages])
+
+    async def fake_decider(records, allowed):
+        return None
+
+    refined = await refine_segments_with_llm(
+        [candidate],
+        message_lookup=message_lookup,
+        config=SimpleNamespace(allowed_user_ids={200}),
+        decide_segment=fake_decider,
+    )
+
+    assert refined == []
+
+
+@pytest.mark.asyncio
+async def test_refine_segments_falls_back_to_heuristics_without_decider():
+    messages = [
+        _make_message(1, 100, 0),
+        _make_message(2, 100, 1),
+        _make_message(3, 200, 2),
+        _make_message(4, 100, 3),
+        _make_message(5, 200, 4),
+    ]
+    message_lookup = {msg.id: msg for msg in messages}
+    candidate = SegmentCandidate(channel_id=1, message_ids=[msg.id for msg in messages])
+
+    refined = await refine_segments_with_llm(
+        [candidate],
+        message_lookup=message_lookup,
+        config=SimpleNamespace(allowed_user_ids=set(), segment_decider_model=None),
+        decide_segment=None,
+    )
+
+    assert len(refined) == 1
+    assert refined[0].assigned_assistant_id in {100, 200}
