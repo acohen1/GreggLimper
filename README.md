@@ -18,10 +18,10 @@ Discord assistant for knowledge retrieval and response generation. Gregg Limper 
   - [Configuration](#configuration)
   - [Run the Bot](#run-the-bot)
   - [Run the Test Suite](#run-the-test-suite)
-- [Tuner Package](#tuner-package)
 - [Slash Commands](#slash-commands)
 - [Configuration Reference](#configuration-reference)
 - [Handler Registries](#handler-registries)
+- [Tuner Package](#tuner-package)
 - [Development Notes](#development-notes)
 - [Troubleshooting & Debugging](#troubleshooting--debugging)
 - [Further Reading](#further-reading)
@@ -174,16 +174,6 @@ pytest
 
 Pytest targets are organized by subsystem (`tests/cache`, `tests/formatter`, `tests/rag`, etc.), and fixtures in `tests/conftest.py` provide Discord stubs plus temporary storage paths.
 
-## Tuner Package
-
-Need a supervised dataset that mirrors Gregg Limper's prompt stack? The repo ships with a standalone tuner CLI under [`tuner/`](tuner/README.md). It collects Discord history (respecting whitelisted speakers and earliest cutoffs), injects synthetic `retrieve_context` calls, and exports JSONL records that match OpenAI's chat finetune schema.
-
-- Copy `tuner/config.sample.toml` to `tuner/config.toml` and fill in the `[dataset]`, `[models]`, and `[discord]` sections. Bot secrets stay in `.env`; the TOML captures run profiles (channels, allowed users, `max_messages`, `max_samples`, output paths, etc.).
-- Run `python -m tuner build-dataset` (or pass `--config path/to/config.toml`). CLI flags override any TOML value when you need to experiment with alternate slices.
-- Progress logs report per-channel hydration, LLM segment approvals, synthetic tool counts, and the final supervised sample tally so you can monitor long-running builds.
-
-See [tuner/README.md](tuner/README.md) for full configuration and schema details.
-
 ## Slash Commands
 
 - `/help` — Lists all registered application commands.
@@ -275,6 +265,16 @@ The tables below highlight the specifics for each subsystem.
 | Decorator | `tools.register_tool` |
 | Runtime API | `tools.get_registered_tool_specs()` / `tools.get_tool_entry(name)` |
 | When adding | Return a `ToolResult` from `run`, add or update tests in `tests/tools/`, consider logging/timeout behaviour, and document new configuration knobs if needed (see `src/gregg_limper/tools/__init__.py`). |
+
+## Tuner Package
+
+Need a supervised dataset that mirrors Gregg Limper's prompt stack? The repo ships with a standalone tuner CLI under [`tuner/`](tuner/README.md). It collects Discord history (respecting whitelisted speakers and earliest cutoffs), injects synthetic `retrieve_context` calls, and exports JSONL records that match OpenAI's chat finetune schema.
+
+- Copy `tuner/config.sample.toml` to `tuner/config.toml` and fill in the `[dataset]`, `[models]`, and `[discord]` sections. Bot secrets stay in `.env`; the TOML captures run profiles (channels, allowed users, `max_messages`, `max_samples`, output paths, etc.).
+- Run `python -m tuner build-dataset` (or pass `--config path/to/config.toml`). CLI flags override any TOML value when you need to experiment with alternate slices.
+- Progress logs report per-channel hydration, LLM segment approvals, synthetic tool counts, and the final supervised sample tally so you can monitor long-running builds.
+
+See [tuner/README.md](tuner/README.md) for full configuration and schema details.
 
 ## Development Notes
 
