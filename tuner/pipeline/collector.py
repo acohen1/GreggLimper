@@ -120,10 +120,12 @@ async def _fetch_channel_history(
     total_window = max(
         (datetime.now(timezone.utc) - cutoff).total_seconds(), 1.0
     )
-    async for message in channel.history(limit=limit, oldest_first=True):
+    async for message in channel.history(
+        limit=limit,
+        oldest_first=True,
+        after=cutoff,
+    ):
         created_at = _ensure_timezone(message.created_at)
-        if created_at < cutoff:
-            continue
         author_id = getattr(message.author, "id", None)
         if not keep_all and author_id not in allowed_user_ids:
             continue
