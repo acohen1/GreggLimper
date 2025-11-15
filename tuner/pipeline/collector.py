@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import Iterable, List, Sequence
 
 from discord import Client, Message, TextChannel
-
-
 from types import SimpleNamespace
 
 from ..config import DatasetBuildConfig
@@ -154,13 +152,22 @@ async def _fetch_channel_history(
 def _serialize_message(message: Message) -> dict:
     author = getattr(message, "author", None)
     display_name = getattr(author, "display_name", None) or getattr(author, "name", "")
+    guild = getattr(message, "guild", None)
+    channel = getattr(message, "channel", None)
     return {
         "id": getattr(message, "id", None),
         "author_id": getattr(author, "id", None),
         "author": display_name,
+        "channel_id": getattr(channel, "id", None),
+        "channel_name": getattr(channel, "name", None),
+        "guild_id": getattr(guild, "id", None),
+        "guild_name": getattr(guild, "name", None),
         "created_at": _ensure_timezone(message.created_at).isoformat(),
         "content": (message.clean_content or message.content or "").strip(),
-        "attachments": [getattr(att, "url", "") for att in getattr(message, "attachments", [])],
+        "attachments": [
+            getattr(att, "url", "")
+            for att in getattr(message, "attachments", [])
+        ],
     }
 
 
@@ -212,10 +219,20 @@ def _load_cached_channel(directory: Path, channel_id: int) -> RawConversation | 
                     display_name=payload.get("author"),
                     name=payload.get("author"),
                 )
+                guild_stub = SimpleNamespace(
+                    id=payload.get("guild_id"),
+                    name=payload.get("guild_name"),
+                ) if payload.get("guild_id") is not None else None
+                channel_stub = SimpleNamespace(
+                    id=payload.get("channel_id", channel_id),
+                    name=payload.get("channel_name"),
+                    guild=guild_stub,
+                )
                 stub = SimpleNamespace(
                     id=payload.get("id"),
                     author=author,
-                    channel=SimpleNamespace(id=channel_id),
+                    channel=channel_stub,
+                    guild=guild_stub,
                     created_at=_ensure_timezone(
                         datetime.fromisoformat(payload["created_at"])
                     ),
