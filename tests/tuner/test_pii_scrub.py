@@ -15,11 +15,11 @@ def test_scrub_conversations_aliases_content():
     )
     convo = SimpleNamespace(messages=[message])
 
-    alias_gen = AliasGenerator("secret")
+    alias_gen = AliasGenerator()
     alias_map = _scrub_conversations([convo], alias_gen)
 
-    assert author.display_name != "Alex"
-    assert "<@2>" not in message.clean_content
-    assert mention.display_name != "Mahik"
+    assert getattr(message, "_pii_author_alias") != "Alex"
+    assert "<@2>" not in getattr(message, "_pii_clean_content")
+    assert getattr(message, "_pii_mentions_data")[0]["display_name"] != "Mahik"
     assert alias_map[getattr(author, "id")] == author.display_name
     assert alias_map[getattr(mention, "id")] == mention.display_name

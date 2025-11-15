@@ -74,7 +74,7 @@ async def build_dataset(config: DatasetBuildConfig) -> None:
             reuse_raw=config.reuse_raw,
         )
 
-    alias_generator = AliasGenerator(config.pii_salt or "") if config.scrub_pii else None
+    alias_generator = AliasGenerator() if config.scrub_pii else None
     alias_map = _scrub_conversations(raw_conversations, alias_generator)
 
     stats["channels_collected"] = len(raw_conversations)
@@ -311,20 +311,19 @@ def _scrub_conversations(conversations, alias_generator: AliasGenerator | None) 
             if user_id is not None:
                 alias_map[user_id] = alias
 
+            setattr(message, "_pii_author_alias", alias)
             _set_attr_if_possible(author, "display_name", alias)
             _set_attr_if_possible(author, "name", alias)
 
             for attr in ("clean_content", "content"):
                 value = getattr(message, attr, None)
                 if isinstance(value, str) and value:
-                    _set_attr_if_possible(
-                        message,
-                        attr,
-                        scrub_text(value, alias_generator.alias),
-                    )
+                    sanitized = scrub_text(value, alias_generator.alias)
+                    setattr(message, f"_pii_{attr}", sanitized)
 
             mentions = getattr(message, "mentions", None)
             if mentions:
+                sanitized_mentions = []
                 for mention in mentions:
                     mention_id = getattr(mention, "id", None)
                     mention_alias = alias_generator.alias(mention_id)
@@ -332,6 +331,14 @@ def _scrub_conversations(conversations, alias_generator: AliasGenerator | None) 
                         alias_map.setdefault(mention_id, mention_alias)
                     _set_attr_if_possible(mention, "display_name", mention_alias)
                     _set_attr_if_possible(mention, "name", mention_alias)
+                    sanitized_mentions.append(
+                        {
+                            "id": mention_id,
+                            "display_name": mention_alias,
+                            "name": mention_alias,
+                        }
+                    )
+                setattr(message, "_pii_mentions_data", sanitized_mentions)
 
     return alias_map
 

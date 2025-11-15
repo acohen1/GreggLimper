@@ -4,21 +4,78 @@ import hashlib
 import re
 from typing import Dict
 
+ADJECTIVES = [
+    "Amber",
+    "Brisk",
+    "Crimson",
+    "Dusky",
+    "Emerald",
+    "Fuzzy",
+    "Golden",
+    "Hazel",
+    "Ivory",
+    "Jolly",
+    "Kindly",
+    "Lunar",
+    "Mellow",
+    "Nimble",
+    "Obsidian",
+    "Plush",
+    "Quantum",
+    "Rusty",
+    "Sunny",
+    "Teal",
+    "Umber",
+    "Velvet",
+    "Witty",
+    "Xenial",
+    "Young",
+    "Zephyr",
+]
+
+NOUNS = [
+    "Anchor",
+    "Badger",
+    "Comet",
+    "Drift",
+    "Ember",
+    "Falcon",
+    "Garden",
+    "Harbor",
+    "Iris",
+    "Jungle",
+    "Koala",
+    "Lagoon",
+    "Meadow",
+    "Nebula",
+    "Otter",
+    "Prairie",
+    "Quill",
+    "Raven",
+    "Sprout",
+    "Turtle",
+    "Vale",
+    "Willow",
+    "Xylophone",
+    "Yonder",
+    "Zebra",
+]
+
 
 class AliasGenerator:
-    def __init__(self, salt: str, prefix: str = "User") -> None:
-        self.salt = salt
-        self.prefix = prefix
+    def __init__(self) -> None:
         self._cache: Dict[int, str] = {}
 
     def alias(self, user_id: int | None) -> str:
         if user_id is None:
-            return f"{self.prefix}_anon"
+            return "SolarScribe"
         if user_id in self._cache:
             return self._cache[user_id]
 
-        digest = hashlib.sha256(f"{self.salt}:{user_id}".encode("utf-8")).hexdigest()
-        label = f"{self.prefix}_{digest[:8]}"
+        digest = hashlib.sha256(str(user_id).encode("utf-8")).digest()
+        adj = ADJECTIVES[digest[0] % len(ADJECTIVES)]
+        noun = NOUNS[digest[1] % len(NOUNS)]
+        label = f"{adj}{noun}"
         self._cache[user_id] = label
         return label
 
@@ -35,6 +92,3 @@ def scrub_text(text: str, alias_fn) -> str:
 
 
 __all__ = ["AliasGenerator", "scrub_text"]
-
-
-__all__ = ["AliasGenerator"]

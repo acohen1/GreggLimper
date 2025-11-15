@@ -21,7 +21,6 @@ class DatasetBuildConfig:
         tool_trigger_model: Override model for synthetic tool trigger checks.
         moderation_model: Optional OpenAI model used to screen formatted samples.
         scrub_pii: When True, anonymize user identifiers in the exported dataset.
-        pii_salt: Secret salt used to generate deterministic aliases when scrub_pii is enabled.
         print_stats: When True, emit run statistics to stdout/logs.
         stats_path: Optional destination for structured run statistics.
         discord_token: API token used by the standalone tuner client.
@@ -43,7 +42,6 @@ class DatasetBuildConfig:
     tool_trigger_model: str | None = None
     moderation_model: str | None = None
     scrub_pii: bool = False
-    pii_salt: str | None = None
     segment_decider_concurrency: int = 4
     allowed_assistant_custom_emojis: Set[str] = field(default_factory=set)
     segment_dump_dir: Path = field(default_factory=lambda: Path("data/finetune/segments"))

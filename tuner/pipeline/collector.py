@@ -150,7 +150,12 @@ async def _fetch_channel_history(
 
 def _serialize_message(message: Message) -> dict:
     author = getattr(message, "author", None)
-    display_name = getattr(author, "display_name", None) or getattr(author, "name", "")
+    alias_override = getattr(message, "_pii_author_alias", None)
+    display_name = (
+        alias_override
+        or getattr(author, "display_name", None)
+        or getattr(author, "name", "")
+    )
     guild = getattr(message, "guild", None)
     channel = getattr(message, "channel", None)
     mentions = []
@@ -187,12 +192,16 @@ def _serialize_message(message: Message) -> dict:
         "guild_name": getattr(guild, "name", None),
         "guild_me_id": guild_me_id,
         "created_at": _ensure_timezone(message.created_at).isoformat(),
-        "content": (message.clean_content or message.content or "").strip(),
+        "content": (
+            getattr(message, "_pii_clean_content", None)
+            or getattr(message, "_pii_content", None)
+            or (message.clean_content or message.content or "")
+        ).strip(),
         "attachments": [
             getattr(att, "url", "")
             for att in getattr(message, "attachments", [])
         ],
-        "mentions": mentions,
+        "mentions": getattr(message, "_pii_mentions_data", mentions),
         "stickers": stickers,
     }
 

@@ -12,7 +12,6 @@ assistant_custom_emojis = [":SoloPog:"]          # whitelist of custom emojis as
 reuse_raw = false                                # skip Discord fetches when raw dumps already exist
 reuse_segments = false                           # skip LLM refinement when segments cache exists
 scrub_pii = false                                # when true, replace user identifiers with deterministic aliases
-pii_salt = "PII_SALT"                            # required when scrub_pii is true
 output_path = "data/finetune/records.jsonl"
 raw_dump_dir = "data/finetune/raw"               # per-channel JSONL transcripts
 dry_run = false
