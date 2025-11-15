@@ -44,6 +44,16 @@ async def build_prompt_shaped_sample(
         return None
 
     sanitized_history = _sanitize_history(relabeled_history)
+    if (
+        not sanitized_history
+        or sanitized_history[-1].get("role") != "assistant"
+        or not sanitized_history[-1].get("content")
+    ):
+        logger.debug(
+            "Skipping segment %s because last turn is not an assistant reply",
+            segment.message_ids,
+        )
+        return None
 
     prompt_messages, tools = _build_prompt_header()
     if context_messages:

@@ -50,3 +50,25 @@ async def test_build_prompt_shaped_sample_requires_assistant():
     )
 
     assert sample is None
+
+
+@pytest.mark.asyncio
+async def test_build_prompt_shaped_sample_skips_when_last_turn_user():
+    segment = SegmentedConversation(
+        channel_id=77,
+        message_ids=[1, 2, 3],
+        assigned_assistant_id=10,
+    )
+    history = [
+        {"role": "assistant", "content": "first reply", "message_id": 1},
+        {"role": "user", "content": "follow-up", "message_id": 2},
+        {"role": "user", "content": "final user", "message_id": 3},
+    ]
+
+    sample = await build_prompt_shaped_sample(
+        segment=segment,
+        relabeled_history=history,
+        synthetic_tool_uses=0,
+    )
+
+    assert sample is None

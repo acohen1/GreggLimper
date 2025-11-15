@@ -153,6 +153,30 @@ def _serialize_message(message: Message) -> dict:
     display_name = getattr(author, "display_name", None) or getattr(author, "name", "")
     guild = getattr(message, "guild", None)
     channel = getattr(message, "channel", None)
+    mentions = []
+    for user in getattr(message, "mentions", []) or []:
+        mentions.append(
+            {
+                "id": getattr(user, "id", None),
+                "display_name": getattr(user, "display_name", None)
+                or getattr(user, "name", ""),
+                "name": getattr(user, "name", ""),
+            }
+        )
+    stickers = []
+    for sticker in getattr(message, "stickers", []) or []:
+        stickers.append(
+            {
+                "id": getattr(sticker, "id", None),
+                "name": getattr(sticker, "name", None),
+                "description": getattr(sticker, "description", None),
+            }
+        )
+    guild_me_id = None
+    if guild is not None:
+        me = getattr(guild, "me", None)
+        if me is not None:
+            guild_me_id = getattr(me, "id", None)
     return {
         "id": getattr(message, "id", None),
         "author_id": getattr(author, "id", None),
@@ -161,12 +185,15 @@ def _serialize_message(message: Message) -> dict:
         "channel_name": getattr(channel, "name", None),
         "guild_id": getattr(guild, "id", None),
         "guild_name": getattr(guild, "name", None),
+        "guild_me_id": guild_me_id,
         "created_at": _ensure_timezone(message.created_at).isoformat(),
         "content": (message.clean_content or message.content or "").strip(),
         "attachments": [
             getattr(att, "url", "")
             for att in getattr(message, "attachments", [])
         ],
+        "mentions": mentions,
+        "stickers": stickers,
     }
 
 
@@ -218,15 +245,32 @@ def _load_cached_channel(directory: Path, channel_id: int) -> RawConversation | 
                     display_name=payload.get("author"),
                     name=payload.get("author"),
                 )
-                guild_stub = SimpleNamespace(
-                    id=payload.get("guild_id"),
-                    name=payload.get("guild_name"),
-                ) if payload.get("guild_id") is not None else None
+                guild_stub = None
+                guild_id = payload.get("guild_id")
+                if guild_id is not None:
+                    guild_me_id = payload.get("guild_me_id")
+                    me_stub = (
+                        SimpleNamespace(id=guild_me_id) if guild_me_id is not None else None
+                    )
+                    guild_stub = SimpleNamespace(
+                        id=guild_id,
+                        name=payload.get("guild_name"),
+                        me=me_stub,
+                    )
                 channel_stub = SimpleNamespace(
                     id=payload.get("channel_id", channel_id),
                     name=payload.get("channel_name"),
                     guild=guild_stub,
                 )
+                mention_list = []
+                for entry in payload.get("mentions", []) or []:
+                    mention_list.append(
+                        SimpleNamespace(
+                            id=entry.get("id"),
+                            display_name=entry.get("display_name"),
+                            name=entry.get("name"),
+                        )
+                    )
                 stub = SimpleNamespace(
                     id=payload.get("id"),
                     author=author,
@@ -242,6 +286,15 @@ def _load_cached_channel(directory: Path, channel_id: int) -> RawConversation | 
                         for url in payload.get("attachments", [])
                     ],
                     embeds=[],
+                    mentions=mention_list,
+                    stickers=[
+                        SimpleNamespace(
+                            id=entry.get("id"),
+                            name=entry.get("name"),
+                            description=entry.get("description"),
+                        )
+                        for entry in payload.get("stickers", []) or []
+                    ],
                 )
                 messages.append(stub)
     except Exception:
