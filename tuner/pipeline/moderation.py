@@ -29,16 +29,15 @@ async def moderate_messages(messages: Sequence[dict], *, model: str) -> bool:
             return True
 
         result = await oai.moderate(model=model, input=content)
+        payload = result.model_dump()
     except Exception:
         logger.warning("Moderation request failed; defaulting to keep sample.", exc_info=True)
         return True
 
-    flagged = False
-    for entry in result.get("results", []):
+    for entry in payload.get("results", []):
         if entry.get("flagged"):
-            flagged = True
-            break
-    return not flagged
+            return False
+    return True
 
 
 __all__ = ["moderate_messages"]

@@ -173,4 +173,5 @@ async def chat_full(
 
 async def moderate(input: str, *, model: str) -> dict:
     """Call OpenAI's moderation endpoint."""
+    response = await aoai.moderations.create(model=model, input=input)
     return await aoai.moderations.create(model=model, input=input)
