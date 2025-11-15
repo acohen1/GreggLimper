@@ -99,6 +99,49 @@ def propose_segments(conversations: Iterable[RawConversation]) -> List[SegmentCa
     return candidates
 
 
+def drop_ineligible_candidates(
+    candidates: Iterable[SegmentCandidate],
+    *,
+    message_lookup: Dict[int, Message],
+    config: DatasetBuildConfig,
+) -> tuple[list[SegmentCandidate], int]:
+    """
+    Remove segment candidates that cannot possibly yield a valid assistant.
+
+    Ensures we do not send clearly invalid spans to the LLM by applying the
+    same deterministic eligibility checks used inside refinement.
+    """
+
+    allowed = set(getattr(config, "allowed_user_ids", set()))
+    whitelist = config.allowed_assistant_custom_emojis
+
+    filtered: list[SegmentCandidate] = []
+    pruned = 0
+
+    for candidate in candidates:
+        records = [
+            message_lookup[mid]
+            for mid in candidate.message_ids
+            if mid in message_lookup
+        ]
+        if len(records) < MIN_SEGMENT_MESSAGES:
+            pruned += 1
+            continue
+
+        eligible = _eligible_assistant_ids(
+            records,
+            assigned_ids=allowed,
+            emoji_whitelist=whitelist,
+        )
+        if not eligible:
+            pruned += 1
+            continue
+
+        filtered.append(candidate)
+
+    return filtered, pruned
+
+
 SegmentDecider = Callable[
     [Sequence[Message], Sequence[int]],
     Awaitable["_SegmentDecision | None"],
@@ -493,4 +536,4 @@ def _ensure_timezone(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-__all__ = ["propose_segments", "refine_segments_with_llm"]
+__all__ = ["propose_segments", "refine_segments_with_llm", "drop_ineligible_candidates"]

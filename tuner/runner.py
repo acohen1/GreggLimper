@@ -16,7 +16,11 @@ from .pipeline import TrainingSample
 from .pipeline.collector import collect_history, persist_raw_conversations
 from .pipeline.formatter import build_prompt_shaped_sample
 from .pipeline.relabel import relabel_segment
-from .pipeline.segmenter import propose_segments, refine_segments_with_llm
+from .pipeline.segmenter import (
+    drop_ineligible_candidates,
+    propose_segments,
+    refine_segments_with_llm,
+)
 from .pipeline.tool_synth import (
     build_llm_tool_trigger_decider,
     inject_synthetic_rag_blocks,
@@ -102,13 +106,29 @@ async def _process_conversations(
     raw_conversations,
 ) -> List[TrainingSample]:
     candidates = propose_segments(raw_conversations)
-    stats["segment_candidates"] = len(candidates)
+    raw_candidate_count = len(candidates)
+
     _log_stage(
         2,
-        f"Chunked conversations into {stats['segment_candidates']} segment candidates.",
+        f"Chunked conversations into {raw_candidate_count} segment candidates.",
     )
 
     message_lookup = _index_messages(raw_conversations)
+    candidates, pruned = drop_ineligible_candidates(
+        candidates,
+        message_lookup=message_lookup,
+        config=config,
+    )
+    if pruned:
+        logger.info(
+            "Segmenter: pruned %d candidates with no eligible assistants (%d remain).",
+            pruned,
+            len(candidates),
+        )
+
+    stats["segment_candidates_raw"] = raw_candidate_count
+    stats["segment_candidates"] = len(candidates)
+
     refined_segments: List[SegmentedConversation] | None = None
     if config.reuse_segments:
         refined_segments = _load_segments(config.segment_dump_dir)

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from tuner.pipeline.segmenter import (
+    drop_ineligible_candidates,
     propose_segments,
     refine_segments_with_llm,
     _eligible_assistant_ids,
@@ -205,3 +206,36 @@ def test_eligible_assistant_ids_enforces_custom_emoji_whitelist():
 
     assert allowed in eligible
     assert blocked not in eligible
+
+
+def test_drop_ineligible_candidates_prunes_segments_without_assistants():
+    valid_messages = [
+        _make_message(1, 100, 0),
+        _make_message(2, 200, 1),
+        _make_message(3, 100, 2),
+        _make_message(4, 200, 3),
+    ]
+    invalid_messages = [
+        _make_message(5, 300, 4),
+        _make_message(6, 300, 5),
+        _make_message(7, 300, 6),
+        _make_message(8, 300, 7),
+    ]
+    message_lookup = {msg.id: msg for msg in valid_messages + invalid_messages}
+    candidates = [
+        SegmentCandidate(channel_id=1, message_ids=[1, 2, 3, 4]),
+        SegmentCandidate(channel_id=1, message_ids=[5, 6, 7, 8]),
+    ]
+
+    filtered, pruned = drop_ineligible_candidates(
+        candidates,
+        message_lookup=message_lookup,
+        config=SimpleNamespace(
+            allowed_user_ids=set(),
+            allowed_assistant_custom_emojis=set(),
+        ),
+    )
+
+    assert pruned == 1
+    assert len(filtered) == 1
+    assert filtered[0].message_ids == [1, 2, 3, 4]
