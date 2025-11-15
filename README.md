@@ -113,7 +113,7 @@ The cache relies on the formatter to transform raw Discord messages into stable 
 │   ├── tools/             # Tool registry, execution helpers, and handlers
 │   └── maintenance.py     # Shared utilities for background tasks
 ├── tuner/                 # Standalone finetuner CLI (see tuner/README.md)
-├── tests/                 # Pytest suites covering cache, formatter, tools, RAG, commands
+├── tests/                 # Root test tree (`tests/gregg_limper/`, `tests/tuner/`)
 ├── docs/                  # Milvus GPU setup and restart notebooks
 ├── data/                  # Default SQLite DB and memo snapshots (development)
 ├── requirements.txt       # Dependency pin list (mirrors extras in pyproject)
@@ -169,10 +169,15 @@ During startup the bot will:
 ### Run the Test Suite
 
 ```bash
-pytest
+pytest                    # run every suite (core + tuner)
+pytest tests/gregg_limper # core bot suites only
+pytest tests/tuner        # finetuner suites only
 ```
 
-Pytest targets are organized by subsystem (`tests/cache`, `tests/formatter`, `tests/rag`, etc.), and fixtures in `tests/conftest.py` provide Discord stubs plus temporary storage paths.
+Pytest targets live under two top-level packages:
+- `tests/gregg_limper/` — core bot suites (cache, formatter, rag, tools, etc.) with their own scoped `conftest.py`.
+- `tests/tuner/` — finetuner CLI coverage.
+`tests/conftest.py` carries any shared fixtures across packages.
 
 ## Slash Commands
 
@@ -256,7 +261,7 @@ The tables below highlight the specifics for each subsystem.
 | Directory | `src/gregg_limper/commands/handlers/` |
 | Decorator | `commands.register_cog` |
 | Runtime API | `commands.setup(bot)` attaches every registered cog |
-| When adding | Provide any Discord slash command definitions within the Cog, note that modules are imported eagerly, and run the bot (or `pytest tests/test_commands_setup.py`) to validate registration (see `src/gregg_limper/commands/__init__.py`). |
+| When adding | Provide any Discord slash command definitions within the Cog, note that modules are imported eagerly, and run the bot (or `pytest tests/gregg_limper/test_commands_setup.py`) to validate registration (see `src/gregg_limper/commands/__init__.py`). |
 
 ### Tool Handlers
 | Item | Location / Notes |
@@ -264,7 +269,7 @@ The tables below highlight the specifics for each subsystem.
 | Directory | `src/gregg_limper/tools/handlers/` |
 | Decorator | `tools.register_tool` |
 | Runtime API | `tools.get_registered_tool_specs()` / `tools.get_tool_entry(name)` |
-| When adding | Return a `ToolResult` from `run`, add or update tests in `tests/tools/`, consider logging/timeout behaviour, and document new configuration knobs if needed (see `src/gregg_limper/tools/__init__.py`). |
+| When adding | Return a `ToolResult` from `run`, add or update tests in `tests/gregg_limper/tools/`, consider logging/timeout behaviour, and document new configuration knobs if needed (see `src/gregg_limper/tools/__init__.py`). |
 
 ## Tuner Package
 
@@ -295,10 +300,10 @@ See [tuner/README.md](tuner/README.md) for full configuration and schema details
 
 ## Further Reading
 
-- `docs/setup_milvus_gpu.ipynb` and `docs/restart_milvus_gpu.ipynb` for GPU-backed Milvus deployment notes.
-- `tests/cache/` for cache hydration and eviction behavior.
-- `tests/rag/` for consent flows, backfill parity, and vector synchronization scenarios.
-- `tests/formatter/` for fragment classification and serialization expectations.
+- `docs/setup_milvus_gpu.ipynb` for GPU-backed Milvus deployment notes.
+- `src/gregg_limper/memory/cache/__init__.py` for cache hydration, eviction, and memo persistence internals.
+- `src/gregg_limper/memory/rag/__init__.py` for consent flows, backfill parity, and vector synchronization routines.
+- `src/gregg_limper/formatter/handlers/__init__.py` for fragment classification/serialization expectations.
 
 ## License
 

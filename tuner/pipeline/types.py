@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Iterable, List, Sequence
+from typing import List
 
 from discord import Message
 
