@@ -75,7 +75,6 @@ async def collect_history(
             messages=messages,
         )
         conversations.append(convo)
-        _persist_single_raw(convo, raw_dir)
 
     return conversations
 
