@@ -5,7 +5,7 @@ Offline tooling for building Gregg Limper finetuning datasets. The tuner CLI mir
 ## Config Setup
 
 1. Copy `tuner/config.sample.toml` to `tuner/config.toml`.
-2. Edit the `[dataset]` block with the channel IDs, allowed user IDs, earliest timestamp, max messages per channel, sample cap, and output paths you need.
+2. Edit the `[dataset]` block with the channel IDs, allowed user IDs, earliest timestamp, max messages per channel, sample cap, and output paths you need. The Discord bot must have permission to read message history in every listed channel.
 3. Specify the segment/tool trigger model IDs under `[models]`.
 4. Keep secrets in the environment: set `DISCORD_API_TOKEN` (or adjust `discord.token_env`) before running the tuner. The TOML intentionally excludes inline secrets.
 

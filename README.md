@@ -194,7 +194,7 @@ Additional commands can be added by creating new handlers under `src/gregg_limpe
 | `GCLOUD_API_KEY` | Authenticates calls to the YouTube Data API for video metadata. |
 | `BOT_USER_ID` | Numeric Discord user ID of the bot; used to filter self-mentions and seed consent. |
 | `MSG_MODEL_ID` / `IMG_MODEL_ID` / `WEB_MODEL_ID` | Model identifiers for chat replies, vision captioning, and web summarization respectively. |
-| `CHANNEL_IDS` | Comma-separated list of guild channel IDs that the cache should ingest. |
+| `CHANNEL_IDS` | Comma-separated list of guild channel IDs that the cache should ingest (bot must have read history access in each channel). |
 
 ### Core Behaviour
 
