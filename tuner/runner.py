@@ -245,7 +245,11 @@ def _index_messages(conversations) -> Dict[int, Message]:
 
 def _write_dataset(path: Path, samples: List[TrainingSample]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
+    metadata_path = path.with_name("records.metadata.jsonl")
+
+    with path.open("w", encoding="utf-8") as handle, metadata_path.open(
+        "w", encoding="utf-8"
+    ) as meta_handle:
         for sample in samples:
             handle.write(
                 json.dumps(
@@ -253,13 +257,18 @@ def _write_dataset(path: Path, samples: List[TrainingSample]) -> None:
                         "messages": sample.messages,
                         "parallel_tool_calls": sample.parallel_tool_calls,
                         "tools": sample.tools,
-                        "metadata": sample.metadata,
                     },
                     ensure_ascii=False,
                 )
             )
             handle.write("\n")
-    logger.info("Wrote %d samples to %s", len(samples), path)
+
+            meta_handle.write(
+                json.dumps(sample.metadata, ensure_ascii=False)
+            )
+            meta_handle.write("\n")
+
+    logger.info("Wrote %d samples to %s (metadata at %s)", len(samples), path, metadata_path)
 
 
 def _emit_stats(stats: dict, *, config: DatasetBuildConfig) -> None:

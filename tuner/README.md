@@ -52,12 +52,13 @@ Flags override any TOML value (e.g., `--channels`, `--earliest`, `--segment-mode
 - `assistant_custom_emojis` / `--assistant-emojis`: whitelist of custom emojis that do **not** disqualify an assistant candidate. The segmenter already rejects speakers who send consecutive replies, emit non-text content (links, attachments, embeds), or use any other custom emoji.
 - Need the whitelist fast? Run `python -m tuner.scripts.list_guild_emojis` (uses `tuner/config.toml` plus `DISCORD_API_TOKEN` by default) or add `--guilds <id ...>` to target specific servers. The script prints each guild’s inventory and automatically rewrites `dataset.assistant_custom_emojis` in your tuner config with every discovered custom emoji.
 
-By default the CLI writes three artifacts under `data/finetune/`:
+By default the CLI writes four artifacts under `data/finetune/`:
 
 ```
-raw/        # cached channel history
-segments/   # refined segments ready for relabeling
-records.jsonl  # final supervised dataset
+raw/                     # cached channel history
+segments/                # refined segments ready for relabeling
+records.jsonl            # final supervised dataset (OpenAI schema)
+records.metadata.jsonl   # parallel metadata (channel ids, assistant ids, etc.)
 ```
 
 ## Export Format
