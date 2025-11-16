@@ -15,7 +15,6 @@ ALLOWED_KEYS = {
     "content",
     "tool_calls",
     "tool_call_id",
-    "name",
 }
 
 

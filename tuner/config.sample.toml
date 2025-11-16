@@ -22,6 +22,7 @@ stats_path = "data/finetune/stats.json"
 segment = "gpt-5-nano-2025-08-07"
 tool_trigger = "gpt-5-nano-2025-08-07"
 moderation = "omni-moderation-2024-09-26"
+relevance = "gpt-5-nano-2025-08-07"
 
 [discord]
 # Keep the token in an environment variable--just reference that env here

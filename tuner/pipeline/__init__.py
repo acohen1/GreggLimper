@@ -7,6 +7,7 @@ from .types import (
     TrainingSample,
 )
 from .moderation import moderate_messages
+from .relevance import is_relevant
 
 __all__ = [
     "RawConversation",
@@ -14,4 +15,5 @@ __all__ = [
     "SegmentedConversation",
     "TrainingSample",
     "moderate_messages",
+    "is_relevant",
 ]

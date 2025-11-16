@@ -28,6 +28,7 @@ from .pipeline.tool_synth import (
     build_llm_tool_trigger_decider,
     inject_synthetic_rag_blocks,
 )
+from .pipeline.relevance import is_relevant
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +227,20 @@ async def _process_conversations(
         )
         if sample is None:
             continue
+
+        if config.segment_decider_model:
+            relevant = await is_relevant(
+                sample.messages,
+                model=config.segment_decider_model,
+            )
+            if not relevant:
+                stats.setdefault("samples_blocked_relevance", 0)
+                stats["samples_blocked_relevance"] += 1
+                logger.info(
+                    "Relevance gate dropped segment %s (assistant not tied to last user).",
+                    segment.message_ids,
+                )
+                continue
 
         if moderation_model:
             keep = await moderate_messages(sample.messages, model=moderation_model)

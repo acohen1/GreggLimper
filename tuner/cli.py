@@ -138,6 +138,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="OpenAI model ID used to screen formatted samples (e.g., omni-moderation-2024-09-26).",
     )
     build_cmd.add_argument(
+        "--relevance-model",
+        type=str,
+        default=None,
+        help="OpenAI model ID used to confirm assistant replies are relevant to the last user turn.",
+    )
+    build_cmd.add_argument(
         "--segment-dir",
         type=Path,
         default=None,
@@ -281,6 +287,7 @@ def _resolve_dataset_config(
     segment_model = args.segment_model or models_cfg.get("segment")
     tool_trigger_model = args.tool_trigger_model or models_cfg.get("tool_trigger")
     moderation_model = args.moderation_model or models_cfg.get("moderation")
+    relevance_model = args.relevance_model or models_cfg.get("relevance") or segment_model
     if not segment_model:
         parser.error("Missing segment model. Provide --segment-model or models.segment in config.toml.")
     if not tool_trigger_model:
@@ -308,6 +315,7 @@ def _resolve_dataset_config(
         segment_decider_model=segment_model,
         tool_trigger_model=tool_trigger_model,
         moderation_model=moderation_model,
+        relevance_model=relevance_model,
         scrub_pii=scrub_pii,
         segment_decider_concurrency=segment_concurrency,
         allowed_assistant_custom_emojis=assistant_emojis,

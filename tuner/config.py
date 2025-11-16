@@ -20,6 +20,7 @@ class DatasetBuildConfig:
         segment_decider_model: Override model for segment LLM refinement.
         tool_trigger_model: Override model for synthetic tool trigger checks.
         moderation_model: Optional OpenAI model used to screen formatted samples.
+        relevance_model: OpenAI model used to confirm the final assistant reply is relevant to the last user turn.
         scrub_pii: When True, anonymize user identifiers in the exported dataset.
         print_stats: When True, emit run statistics to stdout/logs.
         stats_path: Optional destination for structured run statistics.
@@ -41,6 +42,7 @@ class DatasetBuildConfig:
     segment_decider_model: str | None = None
     tool_trigger_model: str | None = None
     moderation_model: str | None = None
+    relevance_model: str | None = None
     scrub_pii: bool = False
     segment_decider_concurrency: int = 4
     allowed_assistant_custom_emojis: Set[str] = field(default_factory=set)
