@@ -90,8 +90,17 @@ def _sanitize_history(history: List[dict]) -> List[dict]:
         clean = {k: v for k, v in entry.items() if k in ALLOWED_KEYS}
         clean.setdefault("role", entry.get("role"))
         clean.setdefault("content", entry.get("content", ""))
-        if clean.get("role") != "tool":
-            clean.pop("name", None)
+        role = clean.get("role")
+        clean.pop("name", None)
+        if role == "tool":
+            keep = {"role": "tool"}
+            if entry.get("tool_call_id"):
+                keep["tool_call_id"] = entry["tool_call_id"]
+            if clean.get("content"):
+                keep["content"] = clean["content"]
+            else:
+                keep.setdefault("content", "")
+            clean = keep
         sanitized.append(clean)
     return sanitized
 
