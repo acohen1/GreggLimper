@@ -204,7 +204,10 @@ def _serialize_message(message: Message) -> dict:
             or (message.clean_content or message.content or "")
         ).strip(),
         "attachments": [
-            getattr(att, "url", "")
+            {
+                "url": getattr(att, "url", ""),
+                "content_type": getattr(att, "content_type", None),
+            }
             for att in getattr(message, "attachments", [])
         ],
         "mentions": mentions_override or mentions,
@@ -297,8 +300,13 @@ def _load_cached_channel(directory: Path, channel_id: int) -> RawConversation | 
                     clean_content=payload.get("content"),
                     content=payload.get("content"),
                     attachments=[
-                        SimpleNamespace(url=url)
-                        for url in payload.get("attachments", [])
+                        SimpleNamespace(
+                            url=att.get("url", "") if isinstance(att, dict) else att,
+                            content_type=att.get("content_type")
+                            if isinstance(att, dict)
+                            else None,
+                        )
+                        for att in payload.get("attachments", [])
                     ],
                     embeds=[],
                     mentions=mention_list,
