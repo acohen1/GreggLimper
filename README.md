@@ -21,6 +21,7 @@ Discord assistant for knowledge retrieval and response generation. Gregg Limper 
 - [Slash Commands](#slash-commands)
 - [Configuration Reference](#configuration-reference)
 - [Handler Registries](#handler-registries)
+- [Tuner Package](#tuner-package)
 - [Development Notes](#development-notes)
 - [Troubleshooting & Debugging](#troubleshooting--debugging)
 - [Further Reading](#further-reading)
@@ -111,7 +112,8 @@ The cache relies on the formatter to transform raw Discord messages into stable 
 │   ├── response/          # Prompt assembly and completion orchestration
 │   ├── tools/             # Tool registry, execution helpers, and handlers
 │   └── maintenance.py     # Shared utilities for background tasks
-├── tests/                 # Pytest suites covering cache, formatter, tools, RAG, commands
+├── tuner/                 # Standalone finetuner CLI (see tuner/README.md)
+├── tests/                 # Root test tree (`tests/gregg_limper/`, `tests/tuner/`)
 ├── docs/                  # Milvus GPU setup and restart notebooks
 ├── data/                  # Default SQLite DB and memo snapshots (development)
 ├── requirements.txt       # Dependency pin list (mirrors extras in pyproject)
@@ -150,6 +152,7 @@ pip install -e .[test]     # editable install with test extras
 3. If Milvus is not available, set `ENABLE_MILVUS=0` to skip vector indexing.
 4. To use a local Ollama model, set `USE_LOCAL=1`, `LOCAL_SERVER_URL`, and `LOCAL_MODEL_ID`.
 5. Configure `RAG_REACTION_EMOJIS` with the emoji descriptors (unicode, `<:name:id>`, `name:id`, numeric ID, or `:name:`) that should promote an opted-in message into long-term RAG storage.
+6. (Optional) Customize the bot’s persona by pointing `PERSONA_PROMPT_FILE` to a text file (default `data/persona_prompt.txt`, not committed). When the file exists, its contents are appended to the system prompt.
 
 ### Run the Bot
 
@@ -166,10 +169,15 @@ During startup the bot will:
 ### Run the Test Suite
 
 ```bash
-pytest
+pytest                    # run every suite (core + tuner)
+pytest tests/gregg_limper # core bot suites only
+pytest tests/tuner        # finetuner suites only
 ```
 
-Pytest targets are organized by subsystem (`tests/cache`, `tests/formatter`, `tests/rag`, etc.), and fixtures in `tests/conftest.py` provide Discord stubs plus temporary storage paths.
+Pytest targets live under two top-level packages:
+- `tests/gregg_limper/` — core bot suites (cache, formatter, rag, tools, etc.) with their own scoped `conftest.py`.
+- `tests/tuner/` — finetuner CLI coverage.
+`tests/conftest.py` carries any shared fixtures across packages.
 
 ## Slash Commands
 
@@ -191,7 +199,7 @@ Additional commands can be added by creating new handlers under `src/gregg_limpe
 | `GCLOUD_API_KEY` | Authenticates calls to the YouTube Data API for video metadata. |
 | `BOT_USER_ID` | Numeric Discord user ID of the bot; used to filter self-mentions and seed consent. |
 | `MSG_MODEL_ID` / `IMG_MODEL_ID` / `WEB_MODEL_ID` | Model identifiers for chat replies, vision captioning, and web summarization respectively. |
-| `CHANNEL_IDS` | Comma-separated list of guild channel IDs that the cache should ingest. |
+| `CHANNEL_IDS` | Comma-separated list of guild channel IDs that the cache should ingest (bot must have read history access in each channel). |
 
 ### Core Behaviour
 
@@ -202,6 +210,7 @@ Additional commands can be added by creating new handlers under `src/gregg_limpe
 | `MAX_GIF_MB` | `10` | Guards GIF downloads during metadata extraction. |
 | `YT_THUMBNAIL_SIZE` | `medium` | Thumbnail size requested from the YouTube API. |
 | `YT_DESC_MAX_LEN` | `200` | Truncation length for video descriptions in fragments. |
+| `PERSONA_PROMPT_FILE` | `data/persona_prompt.txt` | Path to a gitignored text file containing persona instructions; if the file exists, its contents are appended to the system prompt. |
 
 ### Cache & Retrieval
 
@@ -252,7 +261,7 @@ The tables below highlight the specifics for each subsystem.
 | Directory | `src/gregg_limper/commands/handlers/` |
 | Decorator | `commands.register_cog` |
 | Runtime API | `commands.setup(bot)` attaches every registered cog |
-| When adding | Provide any Discord slash command definitions within the Cog, note that modules are imported eagerly, and run the bot (or `pytest tests/test_commands_setup.py`) to validate registration (see `src/gregg_limper/commands/__init__.py`). |
+| When adding | Provide any Discord slash command definitions within the Cog, note that modules are imported eagerly, and run the bot (or `pytest tests/gregg_limper/test_commands_setup.py`) to validate registration (see `src/gregg_limper/commands/__init__.py`). |
 
 ### Tool Handlers
 | Item | Location / Notes |
@@ -260,7 +269,17 @@ The tables below highlight the specifics for each subsystem.
 | Directory | `src/gregg_limper/tools/handlers/` |
 | Decorator | `tools.register_tool` |
 | Runtime API | `tools.get_registered_tool_specs()` / `tools.get_tool_entry(name)` |
-| When adding | Return a `ToolResult` from `run`, add or update tests in `tests/tools/`, consider logging/timeout behaviour, and document new configuration knobs if needed (see `src/gregg_limper/tools/__init__.py`). |
+| When adding | Return a `ToolResult` from `run`, add or update tests in `tests/gregg_limper/tools/`, consider logging/timeout behaviour, and document new configuration knobs if needed (see `src/gregg_limper/tools/__init__.py`). |
+
+## Tuner Package
+
+Need a supervised dataset that mirrors Gregg Limper's prompt stack? The repo ships with a standalone tuner CLI under [`tuner/`](tuner/README.md). It collects Discord history (respecting whitelisted speakers and earliest cutoffs), injects synthetic `retrieve_context` calls, and exports JSONL records that match OpenAI's chat finetune schema.
+
+- Copy `tuner/config.sample.toml` to `tuner/config.toml` and fill in the `[dataset]`, `[models]`, and `[discord]` sections. Bot secrets stay in `.env`; the TOML captures run profiles (channels, allowed users, `max_messages`, `max_samples`, output paths, etc.).
+- Run `python -m tuner build-dataset` (or pass `--config path/to/config.toml`). CLI flags override any TOML value when you need to experiment with alternate slices.
+- Progress logs report per-channel hydration, LLM segment approvals, synthetic tool counts, and the final supervised sample tally so you can monitor long-running builds.
+
+See [tuner/README.md](tuner/README.md) for full configuration and schema details.
 
 ## Development Notes
 
@@ -281,10 +300,10 @@ The tables below highlight the specifics for each subsystem.
 
 ## Further Reading
 
-- `docs/setup_milvus_gpu.ipynb` and `docs/restart_milvus_gpu.ipynb` for GPU-backed Milvus deployment notes.
-- `tests/cache/` for cache hydration and eviction behavior.
-- `tests/rag/` for consent flows, backfill parity, and vector synchronization scenarios.
-- `tests/formatter/` for fragment classification and serialization expectations.
+- `docs/setup_milvus_gpu.ipynb` for GPU-backed Milvus deployment notes.
+- `src/gregg_limper/memory/cache/__init__.py` for cache hydration, eviction, and memo persistence internals.
+- `src/gregg_limper/memory/rag/__init__.py` for consent flows, backfill parity, and vector synchronization routines.
+- `src/gregg_limper/formatter/handlers/__init__.py` for fragment classification/serialization expectations.
 
 ## License
 

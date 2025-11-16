@@ -58,8 +58,10 @@ def _insert_fragment(conn, content: str) -> None:
         )
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+
 SCHEMA_PATH = (
-    Path(__file__).resolve().parents[3]
+    PROJECT_ROOT
     / "src"
     / "gregg_limper"
     / "memory"
