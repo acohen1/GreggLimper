@@ -1,0 +1,78 @@
+# Unified application config (sample)
+
+[gregglimper]
+persona_prompt_file = "data/persona_prompt.txt"
+
+[gregglimper.discord]
+# Prefer storing secrets in env vars; this references the env name.
+token_env = "DISCORD_API_TOKEN"
+bot_user_id = 123456789012345678
+channel_ids = [111111111111111111, 222222222222222222]
+
+[gregglimper.models]
+message_model = "gpt-4o-mini"
+image_model = "gpt-image-1"
+web_model = "gpt-4o-mini-search-preview"
+
+[gregglimper.limits]
+context_length = 100
+max_image_mb = 50
+max_gif_mb = 50
+yt_thumbnail_size = "medium"
+yt_desc_max_len = 200
+
+[gregglimper.cache]
+cache_length = 200
+memo_dir = "data/cache/"
+cache_init_concurrency = 20
+cache_ingest_concurrency = 20
+
+[gregglimper.retrieval]
+sql_db_dir = "data/memory.db"
+emb_model_id = "text-embedding-3-small"
+emb_dim = 1536
+maintenance_interval = 3600
+rag_opt_in_lookback_days = 180
+rag_backfill_concurrency = 20
+rag_vector_search_k = 3
+rag_reaction_emojis = ":greatprophet:, :WOOW:"
+
+[gregglimper.milvus]
+enable_milvus = false
+host = "127.0.0.1"
+port = 19530
+collection = "vectordb"
+nlist = 1024
+nprobe = 32
+delete_chunk = 800
+
+[gregglimper.local_llm]
+use_local = false
+local_model_id = "gpt-oss-20b"
+local_server_url = "http://localhost:11434"
+
+[finetune.dataset]
+channels = [123456789012345678]
+allowed_users = [101, 102]
+earliest = "2024-01-01"
+max_messages = 10000
+max_samples = 50
+segment_concurrency = 4
+segment_dir = "data/finetune/segments"
+assistant_custom_emojis = [":SoloPog:"]
+reuse_raw = false
+reuse_segments = false
+scrub_pii = false
+output_path = "data/finetune/records.jsonl"
+raw_dump_dir = "data/finetune/raw"
+dry_run = false
+print_stats = true
+stats_path = "data/finetune/stats.json"
+
+[finetune.models]
+segment = "gpt-4o-mini"
+moderation = "omni-moderation-2024-09-26"
+relevance = "gpt-4o-mini"
+
+[finetune.discord]
+token_env = "DISCORD_API_TOKEN"

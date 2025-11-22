@@ -18,7 +18,7 @@ Adding a new tool requires changes across the app:
    :func:`register_tool`.
 2. Ensure the handler returns meaningful text for the LLM (update tests in
    ``tests/tools``).
-3. Document any new configuration in ``README.md`` and update ``.env.example``.
+3. Document any new configuration in ``config/CONFIG.md`` and update ``config/.env.example``.
 """
 
 from __future__ import annotations
