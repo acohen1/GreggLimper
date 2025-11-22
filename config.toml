@@ -34,7 +34,7 @@ maintenance_interval = 3600
 rag_opt_in_lookback_days = 180
 rag_backfill_concurrency = 20
 rag_vector_search_k = 3
-rag_reaction_emojis = "dY\"�, :greatprophet:, :WOOW:"
+rag_reaction_emojis = ":greatprophet:, :WOOW:"
 
 [gregglimper.milvus]
 enable_milvus = true
@@ -53,7 +53,7 @@ local_server_url = "http://localhost:11434"
 [finetune.dataset]
 channels = [662531201097007121, 1385326416673116331]
 allowed_users = [152963974760103936, 144618263010082817, 152994006320676865, 153260985489162241, 236631127559766026, 613497826755739658, 907822815506477096, 509535410150703104, 153004525525925888]
-earliest = "2025-09-01"
+earliest = "2020-01-01"
 max_messages = 50000
 max_samples = 500
 segment_concurrency = 20

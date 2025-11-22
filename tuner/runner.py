@@ -265,11 +265,7 @@ def _write_dataset(path: Path, samples: List[TrainingSample]) -> Path:
         for idx, sample in enumerate(samples, start=1):
             handle.write(
                 json.dumps(
-                    {
-                        "messages": sample.messages,
-                        "parallel_tool_calls": sample.parallel_tool_calls,
-                        "tools": sample.tools,
-                    },
+                    {"messages": sample.messages},
                     ensure_ascii=False,
                 )
             )
