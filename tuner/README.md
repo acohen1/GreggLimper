@@ -43,6 +43,7 @@ token_env = "DISCORD_API_TOKEN"
 python -m tuner build-dataset                # uses tuner/config.toml by default
 python -m tuner build-dataset --config path/to/config.toml
 python -m tuner build-dataset --max-samples 25 --dry-run
+python -m tuner audit-records --records data/finetune/records.jsonl  # regenerate audit.json + interactive keep/trim
 ```
 
 Flags override any TOML value (e.g., `--channels`, `--earliest`, `--segment-model`, etc.), making it easy to iterate without editing the config file. A dry run executes the entire pipeline but skips the JSONL write.
@@ -56,14 +57,19 @@ Flags override any TOML value (e.g., `--channels`, `--earliest`, `--segment-mode
 - `models.moderation` / `--moderation-model`: optional OpenAI moderation model (e.g., `omni-moderation-2024-09-26`). When provided, each formatted sample is screened before it’s added to `records.jsonl`; flagged samples are dropped and counted in the final stats.
 - `dataset.scrub_pii` / `--scrub-pii`: enable deterministic aliasing to anonymize user identifiers in the exported dataset. When on, every Discord author/mention is replaced with a friendly pseudonym, and `records.metadata.jsonl` records the alias used for the assistant persona.
 
-By default the CLI writes four artifacts under `data/finetune/`:
+By default the CLI writes these artifacts under `data/finetune/`:
 
 ```
 raw/                     # cached channel history
 segments/                # refined segments ready for relabeling
 records.jsonl            # final supervised dataset (OpenAI schema)
 records.metadata.jsonl   # parallel metadata (channel ids, assistant ids, assistant_alias, etc.)
+records.audit.json       # human-auditable copy of records.jsonl (just user/assistant turns, numbered)
+records.final.jsonl      # filtered subset you keep after reviewing audit.json
+records.final.metadata.jsonl  # metadata matching the filtered subset
 ```
+
+`records.audit.json` drops the system prompt, tool definitions, tool call scaffolding, and context headers so you can skim the same samples as back-and-forth chat. Each entry is numbered for quick selection. After it is written, the CLI will prompt you for the segment numbers to keep; it then deletes `records.audit.json` and writes `records.final.jsonl` (plus matching metadata) containing only the segments you approved.
 
 ## Export Format
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Sequence
 
 from discord import Message
 
@@ -13,6 +13,7 @@ from gregg_limper.response.context_messages import build_context_messages
 from .config import DatasetBuildConfig
 from .discord_client import connect_tuner_client
 from .pipeline import TrainingSample
+from .pipeline.audit_view import build_human_record, parse_keep_tokens
 from .pipeline.moderation import moderate_messages
 from .pipeline.types import SegmentedConversation
 from .util.alias import AliasGenerator, scrub_text, ensure_meta, get_meta
@@ -63,6 +64,9 @@ async def build_dataset(config: DatasetBuildConfig) -> None:
         "dry_run": config.dry_run,
         "output_path": str(config.output_path),
         "raw_dump_dir": str(config.raw_dump_dir),
+        "audit_output_path": str(
+            config.output_path.with_name("records.audit.json")
+        ),
     }
 
     if config.max_samples:
@@ -107,8 +111,13 @@ async def build_dataset(config: DatasetBuildConfig) -> None:
         _emit_stats(stats, config=config)
         return
 
-    _write_dataset(config.output_path, samples)
-    _log_stage(5, f"Wrote {len(samples)} samples to {config.output_path}")
+    audit_path = _write_dataset(config.output_path, samples)
+    _log_stage(
+        5,
+        f"Wrote {len(samples)} samples to {config.output_path} (audit at {audit_path})",
+    )
+
+    _interactive_finalize_dataset(samples, dataset_path=config.output_path, audit_path=audit_path)
     _emit_stats(stats, config=config)
 
 
@@ -285,14 +294,17 @@ def _index_messages(conversations) -> Dict[int, Message]:
     return lookup
 
 
-def _write_dataset(path: Path, samples: List[TrainingSample]) -> None:
+def _write_dataset(path: Path, samples: List[TrainingSample]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     metadata_path = path.with_name("records.metadata.jsonl")
+    audit_path = path.with_name("records.audit.json")
+
+    audit_records: list[dict] = []
 
     with path.open("w", encoding="utf-8") as handle, metadata_path.open(
         "w", encoding="utf-8"
     ) as meta_handle:
-        for sample in samples:
+        for idx, sample in enumerate(samples, start=1):
             handle.write(
                 json.dumps(
                     {
@@ -310,8 +322,76 @@ def _write_dataset(path: Path, samples: List[TrainingSample]) -> None:
             )
             meta_handle.write("\n")
 
-    logger.info("Wrote %d samples to %s (metadata at %s)", len(samples), path, metadata_path)
+            audit_records.append(
+                build_human_record(sample.messages, sample.metadata, index=idx)
+            )
 
+    audit_path.write_text(
+        json.dumps(audit_records, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    logger.info(
+        "Wrote %d samples to %s (metadata at %s, audit at %s)",
+        len(samples),
+        path,
+        metadata_path,
+        audit_path,
+    )
+    return audit_path
+
+
+def _interactive_finalize_dataset(
+    samples: Sequence[TrainingSample], *, dataset_path: Path, audit_path: Path
+) -> None:
+    if not samples:
+        logger.info("No samples available for final selection; skipping interactive filter.")
+        return
+
+    print(
+        "\nAudit file written to %s\n"
+        "Enter the segment numbers to KEEP (e.g., 1 2 4 5). Leave blank to keep all." % audit_path
+    )
+    raw = input("Segments to keep: ")
+    keep_all, keep_set = parse_keep_tokens(raw, len(samples))
+    if not keep_all and not keep_set:
+        logger.warning("No valid segment numbers provided; keeping none.")
+
+    selected: list[TrainingSample] = []
+    for idx, sample in enumerate(samples, start=1):
+        if keep_all or idx in keep_set:
+            selected.append(sample)
+
+    final_path = dataset_path.with_name("records.final.jsonl")
+    final_meta_path = final_path.with_name("records.final.metadata.jsonl")
+
+    with final_path.open("w", encoding="utf-8") as handle, final_meta_path.open(
+        "w", encoding="utf-8"
+    ) as meta_handle:
+        for sample in selected:
+            handle.write(
+                json.dumps(
+                    {
+                        "messages": sample.messages,
+                        "parallel_tool_calls": sample.parallel_tool_calls,
+                        "tools": sample.tools,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            handle.write("\n")
+
+            meta_handle.write(json.dumps(sample.metadata, ensure_ascii=False))
+            meta_handle.write("\n")
+
+    try:
+        audit_path.unlink()
+    except FileNotFoundError:
+        pass
+
+    print(
+        f"Kept {len(selected)} of {len(samples)} segments. "
+        f"Wrote final dataset to {final_path} (metadata at {final_meta_path})."
+    )
 
 def _scrub_conversations(conversations, alias_generator: AliasGenerator | None) -> dict[int, str]:
     alias_map: dict[int, str] = {}
