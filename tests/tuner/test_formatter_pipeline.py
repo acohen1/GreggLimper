@@ -5,7 +5,7 @@ from tuner.pipeline.types import SegmentedConversation
 
 
 @pytest.mark.asyncio
-async def test_build_prompt_shaped_sample_adds_headers():
+async def test_build_prompt_shaped_sample_keeps_dialogue_only():
     segment = SegmentedConversation(
         channel_id=111,
         message_ids=[1, 2],
@@ -19,19 +19,17 @@ async def test_build_prompt_shaped_sample_adds_headers():
     sample = await build_prompt_shaped_sample(
         segment=segment,
         relabeled_history=history,
-        synthetic_tool_uses=0,
-        context_messages=[{"role": "assistant", "content": "### Context\nfoo"}],
     )
 
     assert sample is not None
-    assert sample.messages[0]["role"] == "system"
-    assert sample.messages[1]["content"].startswith("### Tools")
-    assert sample.messages[2]["content"].startswith("### Context")
+    assert sample.messages == [
+        {"role": "user", "content": "alex said:\nhello"},
+        {"role": "assistant", "content": "hey"},
+    ]
+    assert all(entry["role"] in ("user", "assistant") for entry in sample.messages)
     assert sample.messages[-1]["content"] == "hey"
     assert sample.metadata["channel_id"] == 111
     assert sample.metadata["target_message_id"] == 2
-    assert isinstance(sample.tools, list)
-    assert sample.parallel_tool_calls is False
 
 
 @pytest.mark.asyncio
@@ -46,7 +44,6 @@ async def test_build_prompt_shaped_sample_requires_assistant():
     sample = await build_prompt_shaped_sample(
         segment=segment,
         relabeled_history=history,
-        synthetic_tool_uses=0,
     )
 
     assert sample is None
@@ -68,7 +65,36 @@ async def test_build_prompt_shaped_sample_skips_when_last_turn_user():
     sample = await build_prompt_shaped_sample(
         segment=segment,
         relabeled_history=history,
-        synthetic_tool_uses=0,
     )
 
     assert sample is None
+
+
+@pytest.mark.asyncio
+async def test_build_prompt_shaped_sample_drops_tool_entries():
+    segment = SegmentedConversation(
+        channel_id=555,
+        message_ids=[1, 2, 3],
+        assigned_assistant_id=1,
+    )
+    history = [
+        {"role": "user", "content": "hi", "message_id": 1},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"foo": "bar"}],
+            "message_id": 2,
+        },
+        {"role": "assistant", "content": "reply", "message_id": 3},
+    ]
+
+    sample = await build_prompt_shaped_sample(
+        segment=segment,
+        relabeled_history=history,
+    )
+
+    assert sample is not None
+    assert sample.messages == [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "reply"},
+    ]

@@ -52,9 +52,9 @@ class TrainingSample:
 
     Attributes:
         messages: ChatML-style conversation matching OpenAI finetune schema.
-        metadata: Trace data (segment id, participants, synthetic flags).
-        tools: Tool definitions announced to the model.
-        parallel_tool_calls: Whether parallel tool calling is permitted.
+        metadata: Trace data (segment id, participants, etc.).
+        tools: Tool definitions announced to the model (unused; kept for schema compatibility).
+        parallel_tool_calls: Whether parallel tool calling is permitted (always False).
     """
 
     messages: List[dict]

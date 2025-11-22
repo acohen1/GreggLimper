@@ -1,0 +1,77 @@
+# Unified application config (current values)
+
+[gregglimper]
+persona_prompt_file = "data/persona_prompt.txt"
+
+[gregglimper.discord]
+token_env = "DISCORD_API_TOKEN"
+bot_user_id = 1299961656595710024
+channel_ids = [1441617036244553758]
+
+[gregglimper.models]
+message_model = "ft:gpt-4o-mini-2024-07-18:personal::BBtWAjhn"
+image_model = "gpt-4.1-nano-2025-04-14"
+web_model = "gpt-4o-mini-search-preview"
+
+[gregglimper.limits]
+context_length = 100
+max_image_mb = 50
+max_gif_mb = 50
+yt_thumbnail_size = "medium"
+yt_desc_max_len = 200
+
+[gregglimper.cache]
+cache_length = 200
+memo_dir = "data/cache/"
+cache_init_concurrency = 20
+cache_ingest_concurrency = 20
+
+[gregglimper.retrieval]
+sql_db_dir = "data/memory.db"
+emb_model_id = "text-embedding-3-small"
+emb_dim = 1536
+maintenance_interval = 3600
+rag_opt_in_lookback_days = 180
+rag_backfill_concurrency = 20
+rag_vector_search_k = 3
+rag_reaction_emojis = "dY\"�, :greatprophet:, :WOOW:"
+
+[gregglimper.milvus]
+enable_milvus = true
+host = "127.0.0.1"
+port = 19530
+collection = "vectordb"
+nlist = 1024
+nprobe = 32
+delete_chunk = 800
+
+[gregglimper.local_llm]
+use_local = false
+local_model_id = "gpt-oss-20b"
+local_server_url = "http://localhost:11434"
+
+[finetune.dataset]
+channels = [662531201097007121, 1385326416673116331]
+allowed_users = [152963974760103936, 144618263010082817, 152994006320676865, 153260985489162241, 236631127559766026, 613497826755739658, 907822815506477096, 509535410150703104, 153004525525925888]
+earliest = "2025-09-01"
+max_messages = 50000
+max_samples = 500
+segment_concurrency = 20
+segment_dir = "data/finetune/segments"
+assistant_custom_emojis = ["<:11347618826543637181:1181666516593291376>", "<:CAT_STARE:1380268148875333804>", "<:Caught:1319474586319851631>", "<:ChefsKiss:716550978282848316>", "<:ChildPepeSweat:669724511347671059>", "<:CockGoblin:903172919386071060>", "<:Cow:850815414761816094>", "<:DABLOONS:1144711839956082858>", "<:Dark_Stare:1319452466064003153>", "<:DoomPog:959605694980554774>", "<:FUCKOFF:1178147043458416640>", "<:GRINDERS:1390437182069538816>", "<:GivingHead:1319453173739421696>", "<:GreggLimper:975696064478847016>", "<:Gunpoint:1319785850174705765>", "<:HELP:1088942634359337040>", "<:John_Pork:1319456199321714739>", "<:Kekw:716551228955557909>", "<:LETSFUCKINGGO:1022693538066087988>", "<:LOLFace:1319787343426617447>", "<:LimperYoung:975697720167788544>", "<:Luigi_gun:1319786709252309023>", "<:MAJ:1179453724075249774>", "<:Menace:959606196485124186>", "<:NOOOOO:1070116539694587924>", "<:PauseChamp:723724341916729365>", "<:PepeHands:670322133636874241>", "<:RajaW:1104269195866275933>", "<:ResidentSleeper:698364049276010506>", "<:SAJ:1097597286458085447>", "<:SHIEEESTY:1070061147690115132>", "<:Shrug:1319450688769626132>", "<:SoloPog:920540399112708117>", "<:SoloW:920504219222560790>", "<:StareChamp:835394175243124766>", "<:SussyTony:842473677705838602>", "<:Tony:720532522785832981>", "<:TonyW:1097411533442646056>", "<:UHAUL:1114424750610075688>", "<:bald_solomon:1319454736919040052>", "<:banana:903167007753646080>", "<:batfish:1117509651584532480>", "<:billy:721614170142801930>", "<:cat:720534994946097186>", "<:cheeto:666750382948745236>", "<:confused:1189835593799184385>", "<:cornpop:1256312429374214286>", "<:crazy:1147296344432726016>", "<:dead:1319785737583067176>", "<:doomed:1319451137623199744>", "<:feelsdankmansad:794368160064602132>", "<:frenn:1029829476189753457>", "<:gordo:870109461677752351>", "<:gorgonzola:1422589415154384906>", "<:grableft:1319475021302726676>", "<:grabright:1319475022250639420>", "<:greatprophet:1220105637384687706>", "<:joeW:1064657528903975013>", "<:joe_gangsta:1319451483821051968>", "<:jpcrabs:906076752948895744>", "<:jynx:921294912534749194>", "<:kleiner:1152451363540828180>", "<:limabeans:1042653312517939241>", "<:lookUp:1092926875145359361>", "<:mike:925830207892488233>", "<:mojo:1055350310593380372>", "<:monkaS:669724614628212787>", "<:okay:1035066809012994048>", "<:peepowatertank:812082125233848370>", "<:pepChuru:1428132107737104406>", "<:pepeOK:754108162059141221>", "<:pepeheyy:706707205940052023>", "<:pepepanty:706708402314805289>", "<:peperevenge:706709459317030962>", "<:smok:1189836658175119370>", "<:spice:1119819864966705152>", "<:squidward:817207531050500127>", "<:squidwardW:817208381395566613>", "<:teehee:1319451482998702131>", "<:tony_pog:774795415194435606>", "<:uh_ok:1319475314199629965>", "<:wumpus:1170547766603292713>", "<:yep:666219482003537932>", "<a:AlienPls:808422193305616445>", "<a:BANGER:1099091921298792509>", "<a:Bread:1104970592433733663>", "<a:CatCuddle:1319787737682808893>", "<a:Dance_HK:1319452741235507331>", "<a:DemonTiming:985073966840447026>", "<a:HAHAHAHA:1211314478503821363>", "<a:HUH:1265700644959031397>", "<a:IMDEAD:1062313357857783818>", "<a:Kanye:720531878003605524>", "<a:MONKE:959710458011582494>", "<a:MadGamer:1319800788914147420>", "<a:PAGGING:1052807622719455272>", "<a:PepeJAM:666751066284752909>", "<a:WOOW:1433604240386953276>", "<a:Wavy:798330482072354816>", "<a:YIPIEE:1015467645669216266>", "<a:christmas_popping:782972242995839006>", "<a:crabrave:720531324292562974>", "<a:cum_inside:1319453892622155888>", "<a:dixieJAM:793985394512756755>", "<a:dwerk:1436907083189715034>", "<a:fadedthanaho:1037051838429659289>", "<a:groove:720531073775173674>", "<a:hallelujah:1068639173281583194>", "<a:mariodancing:1081390607848706178>", "<a:minecraft_sheep_spinning:1319788232824721499>", "<a:missile:1163608065459888238>", "<a:monkewhat:1319474802481954857>", "<a:monkey_rizz:1319802636723027969>", "<a:nicemoves:923714787903422534>", "<a:peace:720530077145759785>", "<a:penguin_breakdance:1265700406797799464>", "<a:penguin_dance:1265700407796043870>", "<a:pepegadriving:735645947492696124>", "<a:pikachuchair:720530763472437269>", "<a:popping_cat:778517039391440926>", "<a:roach:720530328602542187>", "<a:slater:907015682267439114>", "<a:spongePls:830621558623043654>", "<a:vibecat:920435651843854338>", "<a:yeahidliketosolvethepuzzle:1053595577281151016>"]
+reuse_raw = false
+reuse_segments = false
+scrub_pii = false
+output_path = "data/finetune/records.jsonl"
+raw_dump_dir = "data/finetune/raw"
+dry_run = false
+print_stats = true
+stats_path = "data/finetune/stats.json"
+
+[finetune.models]
+segment = "gpt-5-nano-2025-08-07"
+moderation = "omni-moderation-2024-09-26"
+relevance = "gpt-5-nano-2025-08-07"
+
+[finetune.discord]
+token_env = "DISCORD_API_TOKEN"

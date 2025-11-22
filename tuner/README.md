@@ -1,13 +1,13 @@
 # Tuner Package
 
-Offline tooling for building Gregg Limper finetuning datasets. The tuner CLI mirrors the production prompt stack, collects Discord history within a configurable whitelist/earliest-window, injects synthetic tool calls, and exports supervised samples ready for OpenAI's finetune API.
+Offline tooling for building Gregg Limper finetuning datasets. The tuner CLI collects Discord history within a configurable whitelist/earliest-window, segments conversations, and exports supervised samples ready for OpenAI's finetune API using only user/assistant turns (no system/context/tool scaffolding).
 
 ## Config Setup
 
-1. Copy `tuner/config.sample.toml` to `tuner/config.toml`.
-2. Edit the `[dataset]` block with the channel IDs, allowed user IDs, earliest timestamp, max messages per channel, sample cap, `segment_concurrency` (parallel LLM calls), cache directories, and output paths you need. The Discord bot must have permission to read message history in every listed channel.
-3. Specify the segment/tool trigger model IDs under `[models]`.
-4. Keep secrets in the environment: set `DISCORD_API_TOKEN` and `OPENAI_API_KEY` before running the tuner. The TOML intentionally excludes inline secrets.
+1. Copy `config.sample.toml` to `config.toml` at the repo root (shared with the bot). The tuner reads the `[finetune.*]` sections by default.
+2. In `[finetune.dataset]`, set `channels`, `allowed_users`, `earliest`, `max_messages`, `max_samples`, `segment_concurrency`, cache/output paths, and emoji whitelist as needed.
+3. In `[finetune.models]`, set the segment/moderation/relevance model IDs.
+4. Keep secrets in the environment: set `DISCORD_API_TOKEN` (or your chosen `token_env`) and `OPENAI_API_KEY`. The TOML intentionally excludes inline secrets.
 
 ```toml
 [dataset]
@@ -30,7 +30,6 @@ print_stats = true
 
 [models]
 segment = "gpt-4o-mini"
-tool_trigger = "gpt-4o-mini"
 moderation = "omni-moderation-2024-09-26"
 
 [discord]
@@ -40,10 +39,9 @@ token_env = "DISCORD_API_TOKEN"
 ## Running the CLI
 
 ```bash
-python -m tuner build-dataset                # uses tuner/config.toml by default
+python -m tuner build-dataset                # uses config.toml by default
 python -m tuner build-dataset --config path/to/config.toml
 python -m tuner build-dataset --max-samples 25 --dry-run
-python -m tuner audit-records --records data/finetune/records.jsonl  # regenerate audit.json + interactive keep/trim
 ```
 
 Flags override any TOML value (e.g., `--channels`, `--earliest`, `--segment-model`, etc.), making it easy to iterate without editing the config file. A dry run executes the entire pipeline but skips the JSONL write.
@@ -64,12 +62,9 @@ raw/                     # cached channel history
 segments/                # refined segments ready for relabeling
 records.jsonl            # final supervised dataset (OpenAI schema)
 records.metadata.jsonl   # parallel metadata (channel ids, assistant ids, assistant_alias, etc.)
-records.audit.json       # human-auditable copy of records.jsonl (just user/assistant turns, numbered)
-records.final.jsonl      # filtered subset you keep after reviewing audit.json
-records.final.metadata.jsonl  # metadata matching the filtered subset
 ```
 
-`records.audit.json` drops the system prompt, tool definitions, tool call scaffolding, and context headers so you can skim the same samples as back-and-forth chat. Each entry is numbered for quick selection. After it is written, the CLI will prompt you for the segment numbers to keep; it then deletes `records.audit.json` and writes `records.final.jsonl` (plus matching metadata) containing only the segments you approved.
+`records.jsonl` is the only required output; `records.metadata.jsonl` is emitted alongside for traceability (ids, aliases, etc.).
 
 ## Export Format
 
@@ -78,19 +73,13 @@ Each JSONL line matches OpenAI's chat finetune schema:
 ```json
 {
   "messages": [
-    {"role": "system", "content": "..."},
-    {"role": "assistant", "content": "### Tools..."},
-    ...
     {"role": "user", "content": "name said:\nhello"},
     {"role": "assistant", "content": "final reply"}
   ],
-  "parallel_tool_calls": false,
-  "tools": [...],
   "metadata": {
     "channel_id": 123,
     "message_ids": [...],
     "assistant_user_id": 42,
-    "synthetic_tool_calls": 1,
     "target_message_id": 987
   }
 }
@@ -98,8 +87,8 @@ Each JSONL line matches OpenAI's chat finetune schema:
 
 ## Progress & Limits
 
-Collection logs surface per-channel heartbeats (message counts plus time-window percentage) and stage summaries (segment approvals, sample counts, synthetic tool calls). Set `dataset.max_samples` to stop once a target number of supervised examples are produced.
+Collection logs surface per-channel heartbeats (message counts plus time-window percentage) and stage summaries (segment approvals and sample counts). Set `dataset.max_samples` to stop once a target number of supervised examples are produced.
 
 ## Testing
 
-The tuner suite lives under `tests/tuner`. Run `pytest tests/tuner` from an activated virtualenv to validate CLI parsing, collectors, segmenters, and synthetic tool logic.
+The tuner suite lives under `tests/tuner`. Run `pytest tests/tuner` from an activated virtualenv to validate CLI parsing, collectors, and segmenters.

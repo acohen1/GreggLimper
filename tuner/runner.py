@@ -3,20 +3,16 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Dict, List
 
 from discord import Message
-
-from gregg_limper.response.context import gather_context
-from gregg_limper.response.context_messages import build_context_messages
 
 from .config import DatasetBuildConfig
 from .discord_client import connect_tuner_client
 from .pipeline import TrainingSample
-from .pipeline.audit_view import build_human_record, parse_keep_tokens
 from .pipeline.moderation import moderate_messages
 from .pipeline.types import SegmentedConversation
-from .util.alias import AliasGenerator, scrub_text, ensure_meta, get_meta
+from .util.alias import AliasGenerator, scrub_text, ensure_meta
 from .pipeline.collector import collect_history, persist_raw_conversations
 from .pipeline.formatter import build_prompt_shaped_sample
 from .pipeline.relabel import relabel_segment
@@ -24,10 +20,6 @@ from .pipeline.segmenter import (
     drop_ineligible_candidates,
     propose_segments,
     refine_segments_with_llm,
-)
-from .pipeline.tool_synth import (
-    build_llm_tool_trigger_decider,
-    inject_synthetic_rag_blocks,
 )
 from .pipeline.relevance import is_relevant
 
@@ -44,7 +36,7 @@ async def build_dataset(config: DatasetBuildConfig) -> None:
         1. Collect filtered Discord history.
         2. Generate deterministic segment candidates.
         3. Run LLM refinement to enforce clean dialogue turns.
-        4. Relabel user/assistant roles and inject synthetic tool calls.
+        4. Relabel user/assistant roles.
         5. Format samples like debug_messages.json and export JSONL.
     """
 
@@ -58,15 +50,11 @@ async def build_dataset(config: DatasetBuildConfig) -> None:
         "segment_candidates": 0,
         "segments_approved": 0,
         "segments_rejected": 0,
-        "synthetic_tool_calls": 0,
         "samples_prepared": 0,
         "sample_cap": config.max_samples,
         "dry_run": config.dry_run,
         "output_path": str(config.output_path),
         "raw_dump_dir": str(config.raw_dump_dir),
-        "audit_output_path": str(
-            config.output_path.with_name("records.audit.json")
-        ),
     }
 
     if config.max_samples:
@@ -111,13 +99,8 @@ async def build_dataset(config: DatasetBuildConfig) -> None:
         _emit_stats(stats, config=config)
         return
 
-    audit_path = _write_dataset(config.output_path, samples)
-    _log_stage(
-        5,
-        f"Wrote {len(samples)} samples to {config.output_path} (audit at {audit_path})",
-    )
-
-    _interactive_finalize_dataset(samples, dataset_path=config.output_path, audit_path=audit_path)
+    _write_dataset(config.output_path, samples)
+    _log_stage(5, f"Wrote {len(samples)} samples to {config.output_path}")
     _emit_stats(stats, config=config)
 
 
@@ -189,12 +172,6 @@ async def _process_conversations(
         ),
     )
 
-    tool_decider = (
-        build_llm_tool_trigger_decider(config.tool_trigger_model)
-        if config.tool_trigger_model
-        else None
-    )
-
     samples: List[TrainingSample] = []
     total_segments = len(refined_segments)
     if total_segments == 0:
@@ -205,34 +182,18 @@ async def _process_conversations(
     moderation_model = config.moderation_model
     log_interval = max(1, total_segments // 10)
     for processed, segment in enumerate(refined_segments, start=1):
-        history_messages = await relabel_segment(
+        relabeled_history = await relabel_segment(
             segment, message_lookup=message_lookup
         )
-        augmented_history, synthetic_count = await inject_synthetic_rag_blocks(
-            history_messages, decider=tool_decider
-        )
-        stats["synthetic_tool_calls"] += synthetic_count
-        last_message = message_lookup.get(segment.message_ids[-1])
-        if last_message is None:
+        if message_lookup.get(segment.message_ids[-1]) is None:
             logger.warning(
                 "Skipping segment %s due to missing terminal message",
                 segment.message_ids,
             )
             continue
-        participant_ids = {
-            entry.get("author_id")
-            for entry in augmented_history
-            if isinstance(entry.get("author_id"), int)
-        }
-        conversation_context = await gather_context(
-            last_message, participant_ids=participant_ids
-        )
-        context_messages = build_context_messages(conversation_context)
         sample = await build_prompt_shaped_sample(
             segment=segment,
-            relabeled_history=augmented_history,
-            synthetic_tool_uses=synthetic_count,
-            context_messages=context_messages,
+            relabeled_history=relabeled_history,
         )
         if sample is None:
             continue
@@ -280,7 +241,7 @@ async def _process_conversations(
     cap_note = f" (cap {config.max_samples})" if config.max_samples else ""
     _log_stage(
         4,
-        f"Built {stats['samples_prepared']} supervised samples{cap_note} with {stats['synthetic_tool_calls']} synthetic tool calls.",
+        f"Built {stats['samples_prepared']} supervised samples{cap_note}.",
     )
 
     return samples
@@ -297,9 +258,6 @@ def _index_messages(conversations) -> Dict[int, Message]:
 def _write_dataset(path: Path, samples: List[TrainingSample]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     metadata_path = path.with_name("records.metadata.jsonl")
-    audit_path = path.with_name("records.audit.json")
-
-    audit_records: list[dict] = []
 
     with path.open("w", encoding="utf-8") as handle, metadata_path.open(
         "w", encoding="utf-8"
@@ -322,76 +280,14 @@ def _write_dataset(path: Path, samples: List[TrainingSample]) -> Path:
             )
             meta_handle.write("\n")
 
-            audit_records.append(
-                build_human_record(sample.messages, sample.metadata, index=idx)
-            )
-
-    audit_path.write_text(
-        json.dumps(audit_records, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
     logger.info(
-        "Wrote %d samples to %s (metadata at %s, audit at %s)",
+        "Wrote %d samples to %s (metadata at %s)",
         len(samples),
         path,
         metadata_path,
-        audit_path,
     )
-    return audit_path
+    return path
 
-
-def _interactive_finalize_dataset(
-    samples: Sequence[TrainingSample], *, dataset_path: Path, audit_path: Path
-) -> None:
-    if not samples:
-        logger.info("No samples available for final selection; skipping interactive filter.")
-        return
-
-    print(
-        "\nAudit file written to %s\n"
-        "Enter the segment numbers to KEEP (e.g., 1 2 4 5). Leave blank to keep all." % audit_path
-    )
-    raw = input("Segments to keep: ")
-    keep_all, keep_set = parse_keep_tokens(raw, len(samples))
-    if not keep_all and not keep_set:
-        logger.warning("No valid segment numbers provided; keeping none.")
-
-    selected: list[TrainingSample] = []
-    for idx, sample in enumerate(samples, start=1):
-        if keep_all or idx in keep_set:
-            selected.append(sample)
-
-    final_path = dataset_path.with_name("records.final.jsonl")
-    final_meta_path = final_path.with_name("records.final.metadata.jsonl")
-
-    with final_path.open("w", encoding="utf-8") as handle, final_meta_path.open(
-        "w", encoding="utf-8"
-    ) as meta_handle:
-        for sample in selected:
-            handle.write(
-                json.dumps(
-                    {
-                        "messages": sample.messages,
-                        "parallel_tool_calls": sample.parallel_tool_calls,
-                        "tools": sample.tools,
-                    },
-                    ensure_ascii=False,
-                )
-            )
-            handle.write("\n")
-
-            meta_handle.write(json.dumps(sample.metadata, ensure_ascii=False))
-            meta_handle.write("\n")
-
-    try:
-        audit_path.unlink()
-    except FileNotFoundError:
-        pass
-
-    print(
-        f"Kept {len(selected)} of {len(samples)} segments. "
-        f"Wrote final dataset to {final_path} (metadata at {final_meta_path})."
-    )
 
 def _scrub_conversations(conversations, alias_generator: AliasGenerator | None) -> dict[int, str]:
     alias_map: dict[int, str] = {}

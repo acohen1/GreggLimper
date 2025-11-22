@@ -9,13 +9,12 @@ from typing import Any, Iterable, List
 
 from .config import DatasetBuildConfig
 from .runner import build_dataset
-from .pipeline.audit_view import build_human_records_from_files, parse_keep_tokens
 
 DEFAULT_OUTPUT_PATH = Path("data/finetune/records.jsonl")
 DEFAULT_RAW_DUMP_DIR = Path("data/finetune/raw")
 DEFAULT_SEGMENT_DIR = Path("data/finetune/segments")
 DEFAULT_STATS_PATH = Path("data/finetune/stats.json")
-DEFAULT_CONFIG_PATH = Path("tuner/config.toml")
+DEFAULT_CONFIG_PATH = Path("config.toml")
 DEFAULT_MAX_MESSAGES = 10000
 DEFAULT_SEGMENT_CONCURRENCY = 4
 DEFAULT_MAX_SAMPLES = None
@@ -127,12 +126,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum concurrent LLM refinement calls (overrides config).",
     )
     build_cmd.add_argument(
-        "--tool-trigger-model",
-        type=str,
-        default=None,
-        help="Model ID used when confirming synthetic retrieve_context triggers (overrides config).",
-    )
-    build_cmd.add_argument(
         "--moderation-model",
         type=str,
         default=None,
@@ -189,35 +182,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Discord API token used to hydrate history (overrides discord.token_env).",
     )
 
-    audit_cmd = subparsers.add_parser(
-        "audit-records",
-        help="Convert an existing records.jsonl into the human-auditable view.",
-    )
-    audit_cmd.add_argument(
-        "--config",
-        type=Path,
-        default=None,
-        help="Path to tuner config TOML (defaults to tuner/config.toml when present).",
-    )
-    audit_cmd.add_argument(
-        "--records",
-        type=Path,
-        default=None,
-        help="Path to records.jsonl (defaults to dataset.output_path).",
-    )
-    audit_cmd.add_argument(
-        "--metadata",
-        type=Path,
-        default=None,
-        help="Path to records.metadata.jsonl (defaults next to records.jsonl).",
-    )
-    audit_cmd.add_argument(
-        "--output",
-        type=Path,
-        default=None,
-        help="Destination for records.audit.json (defaults next to records.jsonl).",
-    )
-
     return parser
 
 
@@ -230,10 +194,6 @@ def main(argv: list[str] | None = None) -> None:
         asyncio.run(build_dataset(config))
         return
 
-    if args.command == "audit-records":
-        _run_audit_command(args, parser)
-        return
-
     parser.print_help()
 
 
@@ -241,9 +201,10 @@ def _resolve_dataset_config(
     args: argparse.Namespace, parser: argparse.ArgumentParser
 ) -> DatasetBuildConfig:
     file_config = _load_file_config(args.config, parser)
-    dataset_cfg = file_config.get("dataset", {})
-    models_cfg = file_config.get("models", {})
-    discord_cfg = file_config.get("discord", {})
+    finetune_cfg = file_config.get("finetune", {}) if isinstance(file_config, dict) else {}
+    dataset_cfg = finetune_cfg.get("dataset", {}) or file_config.get("dataset", {})
+    models_cfg = finetune_cfg.get("models", {}) or file_config.get("models", {})
+    discord_cfg = finetune_cfg.get("discord", {}) or file_config.get("discord", {})
 
     try:
         channels = args.channels or _coerce_int_list(
@@ -319,15 +280,10 @@ def _resolve_dataset_config(
         assistant_emojis = {str(item) for item in assistant_cfg if str(item)}
 
     segment_model = args.segment_model or models_cfg.get("segment")
-    tool_trigger_model = args.tool_trigger_model or models_cfg.get("tool_trigger")
     moderation_model = args.moderation_model or models_cfg.get("moderation")
     relevance_model = args.relevance_model or models_cfg.get("relevance") or segment_model
     if not segment_model:
         parser.error("Missing segment model. Provide --segment-model or models.segment in config.toml.")
-    if not tool_trigger_model:
-        parser.error(
-            "Missing tool trigger model. Provide --tool-trigger-model or models.tool_trigger in config.toml."
-        )
 
     scrub_pii = args.scrub_pii or bool(dataset_cfg.get("scrub_pii", False))
 
@@ -347,7 +303,6 @@ def _resolve_dataset_config(
         max_samples=max_samples,
         dry_run=dry_run,
         segment_decider_model=segment_model,
-        tool_trigger_model=tool_trigger_model,
         moderation_model=moderation_model,
         relevance_model=relevance_model,
         scrub_pii=scrub_pii,
@@ -389,13 +344,19 @@ def _coerce_path(value: Any, default: Path) -> Path:
 def _load_file_config(
     path: Path | None, parser: argparse.ArgumentParser
 ) -> dict[str, Any]:
+    candidates = []
     if path:
-        if not path.is_file():
-            parser.error(f"Config file {path} does not exist.")
-        return _read_toml(path)
+        candidates.append(Path(path))
+    else:
+        candidates.append(DEFAULT_CONFIG_PATH)
+        candidates.append(Path("tuner/config.toml"))
 
-    if DEFAULT_CONFIG_PATH.is_file():
-        return _read_toml(DEFAULT_CONFIG_PATH)
+    for candidate in candidates:
+        if candidate.is_file():
+            return _read_toml(candidate)
+
+    if path:
+        parser.error(f"Config file {path} does not exist.")
     return {}
 
 
@@ -414,67 +375,4 @@ def _resolve_discord_token(cli_token: str | None, discord_cfg: dict[str, Any]) -
     return None
 
 
-def _run_audit_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    file_config = _load_file_config(args.config, parser)
-    dataset_cfg = file_config.get("dataset", {})
-
-    records_path = _coerce_path(
-        args.records or dataset_cfg.get("output_path"), DEFAULT_OUTPUT_PATH
-    )
-    metadata_path = (
-        Path(args.metadata)
-        if args.metadata
-        else records_path.with_name(f"{records_path.stem}.metadata.jsonl")
-    )
-    output_path = (
-        Path(args.output)
-        if args.output
-        else records_path.with_name(f"{records_path.stem}.audit.json")
-    )
-
-    total = build_human_records_from_files(
-        records_path,
-        output_path=output_path,
-        metadata_path=metadata_path,
-    )
-    print(f"Wrote {total} audit records to {output_path}")
-
-    print(
-        "\nAudit file ready. Enter the segment numbers to KEEP (e.g., 1 2 4 5). "
-        "Leave blank to keep all."
-    )
-    raw = input("Segments to keep: ")
-    keep_all, keep_set = parse_keep_tokens(raw, total)
-    final_path = records_path.with_name("records.final.jsonl")
-    final_meta_path = final_path.with_name("records.final.metadata.jsonl")
-
-    meta_handle = metadata_path.open("r", encoding="utf-8") if metadata_path.is_file() else None
-    meta_iter = meta_handle if meta_handle else None
-
-    try:
-        with (
-            records_path.open("r", encoding="utf-8") as record_handle,
-            final_path.open("w", encoding="utf-8") as out_handle,
-            final_meta_path.open("w", encoding="utf-8") as out_meta_handle,
-        ):
-            for idx, record_line in enumerate(record_handle, start=1):
-                meta_line = next(meta_iter, None) if meta_iter else None
-                if keep_all or idx in keep_set:
-                    out_handle.write(record_line)
-                    out_meta_handle.write(meta_line if meta_line is not None else "{}\n")
-    finally:
-        if meta_handle:
-            meta_handle.close()
-        try:
-            output_path.unlink()
-        except FileNotFoundError:
-            pass
-
-    kept = total if keep_all else len(keep_set)
-    print(
-        f"Kept {kept} of {total} segments. "
-        f"Wrote final dataset to {final_path} (metadata at {final_meta_path})."
-    )
-
-
-__all__ = ["main", "build_parser", "_resolve_dataset_config", "_run_audit_command"]
+__all__ = ["main", "build_parser", "_resolve_dataset_config"]

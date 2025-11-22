@@ -144,15 +144,19 @@ pip install -e .[test]     # editable install with test extras
 
 ### Configuration
 
-1. Copy the example environment file and populate the secrets:
+1. Copy the unified config template and tailor it:
    ```bash
-   cp .env.example .env
+   cp config.sample.toml config.toml
    ```
-2. Update all required keys (Discord, OpenAI, Google Cloud) and set `CHANNEL_IDS` to the numeric IDs you want the bot to monitor.
-3. If Milvus is not available, set `ENABLE_MILVUS=0` to skip vector indexing.
-4. To use a local Ollama model, set `USE_LOCAL=1`, `LOCAL_SERVER_URL`, and `LOCAL_MODEL_ID`.
-5. Configure `RAG_REACTION_EMOJIS` with the emoji descriptors (unicode, `<:name:id>`, `name:id`, numeric ID, or `:name:`) that should promote an opted-in message into long-term RAG storage.
-6. (Optional) Customize the bot’s persona by pointing `PERSONA_PROMPT_FILE` to a text file (default `data/persona_prompt.txt`, not committed). When the file exists, its contents are appended to the system prompt.
+   - `[gregglimper.discord]`: set `channel_ids`; override `token_env`/`bot_user_id` if needed.
+   - `[gregglimper.models]`: set chat/image/web model IDs.
+   - `[gregglimper.limits]`, `[gregglimper.cache]`, `[gregglimper.retrieval]`, `[gregglimper.milvus]`, `[gregglimper.local_llm]`: tune behaviour, storage, and backends.
+   - `[finetune.*]`: set this if you plan to run the tuner.
+2. Copy `.env.example` to `.env` and add secrets only (Discord, OpenAI, Google Cloud). The env var names used come from the `token_env` fields in `config.toml`.
+3. To skip Milvus, set `gregglimper.milvus.enable_milvus = false`.
+4. To use a local Ollama model, set `gregglimper.local_llm.use_local = true` and point `local_server_url` / `local_model_id`.
+5. Configure `gregglimper.retrieval.rag_reaction_emojis` with the emoji descriptors (unicode, `<:name:id>`, `name:id`, numeric ID, or `:name:`) that should promote an opted-in message into long-term RAG storage.
+6. (Optional) Customize the bot’s persona via `gregglimper.persona_prompt_file` (default `data/persona_prompt.txt`, not committed). When the file exists, its contents are appended to the system prompt.
 
 ### Run the Bot
 
@@ -190,55 +194,19 @@ Additional commands can be added by creating new handlers under `src/gregg_limpe
 
 ## Configuration Reference
 
-### Required Credentials
-
-| Variable | Purpose |
-| --- | --- |
-| `DISCORD_API_TOKEN` | Bot token used by `discord.py` to connect and subscribe to events. |
-| `OPENAI_API_KEY` | Grants access to chat, embedding, image, and web models used across the pipeline. |
-| `GCLOUD_API_KEY` | Authenticates calls to the YouTube Data API for video metadata. |
-| `BOT_USER_ID` | Numeric Discord user ID of the bot; used to filter self-mentions and seed consent. |
-| `MSG_MODEL_ID` / `IMG_MODEL_ID` / `WEB_MODEL_ID` | Model identifiers for chat replies, vision captioning, and web summarization respectively. |
-| `CHANNEL_IDS` | Comma-separated list of guild channel IDs that the cache should ingest (bot must have read history access in each channel). |
-
-### Core Behaviour
-
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `CONTEXT_LENGTH` | `10` | Number of recent cached messages included in each prompt. |
-| `MAX_IMAGE_MB` | `5` | Rejects oversized image attachments during captioning. |
-| `MAX_GIF_MB` | `10` | Guards GIF downloads during metadata extraction. |
-| `YT_THUMBNAIL_SIZE` | `medium` | Thumbnail size requested from the YouTube API. |
-| `YT_DESC_MAX_LEN` | `200` | Truncation length for video descriptions in fragments. |
-| `PERSONA_PROMPT_FILE` | `data/persona_prompt.txt` | Path to a gitignored text file containing persona instructions; if the file exists, its contents are appended to the system prompt. |
-
-### Cache & Retrieval
-
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `CACHE_LENGTH` | `200` | Rolling window size per channel for the in-memory cache. |
-| `MEMO_DIR` | `data/cache` | Directory where memo snapshots (`*.json.gz`) are persisted. |
-| `CACHE_INIT_CONCURRENCY` | `20` | Parallelism when formatting history during startup. |
-| `CACHE_INGEST_CONCURRENCY` | `20` | Max concurrent ingestion tasks during hydration. |
-| `SQL_DB_DIR` | `data/memory.db` | SQLite file used for long-term storage. |
-| `EMB_MODEL_ID` / `EMB_DIM` | `text-embedding-3-small` / `1536` | Embedding model and dimension enforced by maintenance. |
-| `MAINTENANCE_INTERVAL` | `3600` | Seconds between maintenance cycles. |
-| `RAG_OPT_IN_LOOKBACK_DAYS` | `180` | How far back to backfill when a user opts in. |
-| `RAG_BACKFILL_CONCURRENCY` | `20` | Concurrency for RAG backfill ingestion tasks. |
-| `RAG_REACTION_EMOJIS` | _(empty)_ | Comma-separated list of emoji descriptors that trigger RAG ingestion. Supported forms: unicode literals (`🔥`), full custom emoji (`<:greatprophet:123>`), shorthand `name:id`, bare numeric IDs (`123`), and names with or without surrounding colons (`WOOW` or `:WOOW:`). |
-| `RAG_VECTOR_SEARCH_K` | `3` | Maximum RAG fragments returned per query (tool requests are clamped to this). |
-
-### Vector Store & Local Models
-
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `ENABLE_MILVUS` | `1` | Toggle Milvus integration. Set to `0` to fall back to short-term cache only (RAG retrieval is disabled). |
-| `MILVUS_HOST` / `MILVUS_PORT` | `127.0.0.1` / `19530` | Milvus connection parameters. |
-| `MILVUS_COLLECTION` | `vectordb` | Collection name for fragment vectors. |
-| `MILVUS_NLIST` / `MILVUS_NPROBE` / `MILVUS_DELETE_CHUNK` | `1024` / `32` / `800` | Index tuning knobs mirrored by maintenance utilities. |
-| `USE_LOCAL` | `0` | When truthy, `response.handle` calls Ollama instead of OpenAI chat. |
-| `LOCAL_MODEL_ID` | `gpt-oss-20b` | Ollama model identifier. |
-| `LOCAL_SERVER_URL` | `http://localhost:11434` | Ollama server address. |
+- **Config file:** config.toml (copy from config.sample.toml).
+  - [gregglimper.discord]: channel_ids, token_env (default DISCORD_API_TOKEN), bot_user_id.
+  - [gregglimper.models]: message_model, image_model, web_model.
+  - [gregglimper.limits]: context_length, max_image_mb, max_gif_mb, yt_thumbnail_size, yt_desc_max_len.
+  - [gregglimper.cache]: cache_length, memo_dir, cache_init_concurrency, cache_ingest_concurrency.
+  - [gregglimper.retrieval]: sql_db_dir, emb_model_id, emb_dim, maintenance_interval, rag_opt_in_lookback_days, rag_backfill_concurrency, rag_reaction_emojis, rag_vector_search_k.
+  - [gregglimper.milvus]: enable_milvus, host, port, collection, nlist, nprobe, delete_chunk.
+  - [gregglimper.local_llm]: use_local, local_model_id, local_server_url.
+  - [finetune.*]: dataset/model/output settings for the tuner CLI.
+- **Secrets (env):** set in .env using the env var names referenced by token_env keys.
+  - DISCORD_API_TOKEN: Discord bot token.
+  - OPENAI_API_KEY: OpenAI API key.
+  - GCLOUD_API_KEY: YouTube Data API key.
 
 ## Handler Registries
 
@@ -275,9 +243,9 @@ The tables below highlight the specifics for each subsystem.
 
 Need a supervised dataset that mirrors Gregg Limper's prompt stack? The repo ships with a standalone tuner CLI under [`tuner/`](tuner/README.md). It collects Discord history (respecting whitelisted speakers and earliest cutoffs), injects synthetic `retrieve_context` calls, and exports JSONL records that match OpenAI's chat finetune schema.
 
-- Copy `tuner/config.sample.toml` to `tuner/config.toml` and fill in the `[dataset]`, `[models]`, and `[discord]` sections. Bot secrets stay in `.env`; the TOML captures run profiles (channels, allowed users, `max_messages`, `max_samples`, output paths, etc.).
-- Run `python -m tuner build-dataset` (or pass `--config path/to/config.toml`). CLI flags override any TOML value when you need to experiment with alternate slices.
-- Progress logs report per-channel hydration, LLM segment approvals, synthetic tool counts, and the final supervised sample tally so you can monitor long-running builds.
+- Use the root `config.toml` `[finetune.*]` sections to set channels, allowed users, earliest timestamp, paths, and model IDs (tuner defaults to that file; you can still pass `--config` to point elsewhere).
+- Run `python -m tuner build-dataset`; CLI flags override any TOML value when you need to experiment with alternate slices.
+- Progress logs report per-channel hydration, LLM segment approvals, and the final supervised sample tally so you can monitor long-running builds.
 
 See [tuner/README.md](tuner/README.md) for full configuration and schema details.
 

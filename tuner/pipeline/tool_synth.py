@@ -38,51 +38,13 @@ async def inject_synthetic_rag_blocks(
     decider: ToolTriggerDecider | None = None,
 ) -> Tuple[List[dict], int]:
     """
-    Examine relabeled messages and inject training-only retrieve_context tool calls.
+    Previously injected synthetic retrieve_context tool calls; now a no-op.
 
-    This function must:
-        - detect lore callbacks worthy of the memory tool
-        - optionally confirm intent with an LLM decider
-        - insert an assistant message with "tool_calls" metadata
-        - append the fake tool response (role="tool") that mirrors production schema
+    The tuner pipeline no longer trains on tool usage, so this function simply
+    returns the original messages and a zero count for synthetic calls.
     """
 
-    augmented: list[dict] = []
-    pending_query: SyntheticQuery | None = None
-    synthetic_count = 0
-
-    for entry in messages:
-        role = entry.get("role")
-        content = entry.get("content", "")
-
-        if role == "user":
-            require_specific = decider is None
-            candidate = _maybe_trigger_query(
-                content, require_specific=require_specific
-            )
-            if candidate and decider:
-                try:
-                    should_use = await decider(candidate)
-                except Exception:
-                    logger.warning(
-                        "Tool trigger decider failed; falling back to heuristics.",
-                        exc_info=True,
-                    )
-                    should_use = True
-                if not should_use:
-                    candidate = None
-            pending_query = candidate
-        elif role == "assistant" and pending_query:
-            tool_id = f"synth-call-{synthetic_count + 1}"
-            augmented.extend(_build_tool_sequence(tool_id, pending_query))
-            entry = dict(entry)
-            entry["content"] = _append_archive_note(content, pending_query.summary)
-            synthetic_count += 1
-            pending_query = None
-
-        augmented.append(entry)
-
-    return augmented, synthetic_count
+    return list(messages), 0
 
 
 def build_llm_tool_trigger_decider(model_id: str) -> ToolTriggerDecider:
