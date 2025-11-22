@@ -4,13 +4,13 @@ Offline tooling for building Gregg Limper finetuning datasets. The tuner CLI col
 
 ## Config Setup
 
-1. Copy `config.sample.toml` to `config.toml` at the repo root (shared with the bot). The tuner reads the `[finetune.*]` sections by default.
+1. Copy `config/config.sample.toml` to `config.toml` at the repo root (shared with the bot). The tuner reads the `[finetune.*]` sections by default.
 2. In `[finetune.dataset]`, set `channels`, `allowed_users`, `earliest`, `max_messages`, `max_samples`, `segment_concurrency`, cache/output paths, and emoji whitelist as needed.
 3. In `[finetune.models]`, set the segment/moderation/relevance model IDs.
 4. Keep secrets in the environment: set `DISCORD_API_TOKEN` (or your chosen `token_env`) and `OPENAI_API_KEY`. The TOML intentionally excludes inline secrets.
 
 ```toml
-[dataset]
+[finetune.dataset]
 channels = [123, 456]
 allowed_users = [10, 11]
 earliest = "2024-01-01"
@@ -28,11 +28,11 @@ scrub_pii = false
 dry_run = false
 print_stats = true
 
-[models]
+[finetune.models]
 segment = "gpt-4o-mini"
 moderation = "omni-moderation-2024-09-26"
 
-[discord]
+[finetune.discord]
 token_env = "DISCORD_API_TOKEN"
 ```
 
@@ -51,7 +51,7 @@ Flags override any TOML value (e.g., `--channels`, `--earliest`, `--segment-mode
 - `raw_dump_dir` / `--raw-dump-dir`: where raw Discord transcripts (one JSONL per channel) land. Pair with `--reuse-raw` to skip Discord requests when the cache already exists.
 - `segment_dir` / `--segment-dir`: persistence for refined segments (`segments.json`). Combine with `--reuse-segments` to bypass the LLM refinement step when iterating on downstream stages.
 - `assistant_custom_emojis` / `--assistant-emojis`: whitelist of custom emojis that do **not** disqualify an assistant candidate. The segmenter already rejects speakers who send consecutive replies, emit non-text content (links, attachments, embeds), or use any other custom emoji.
-- Need the whitelist fast? Run `python -m tuner.scripts.list_guild_emojis` (uses `tuner/config.toml` plus `DISCORD_API_TOKEN` by default) or add `--guilds <id ...>` to target specific servers. The script prints each guild’s inventory and automatically rewrites `dataset.assistant_custom_emojis` in your tuner config with every discovered custom emoji.
+- Need the whitelist fast? Run `python scripts/list_guild_emojis.py` (uses `config.toml` plus `DISCORD_API_TOKEN` by default) or add `--guilds <id ...>` to target specific servers. The script prints each guild’s inventory and automatically rewrites `dataset.assistant_custom_emojis` in your tuner config with every discovered custom emoji.
 - `models.moderation` / `--moderation-model`: optional OpenAI moderation model (e.g., `omni-moderation-2024-09-26`). When provided, each formatted sample is screened before it’s added to `records.jsonl`; flagged samples are dropped and counted in the final stats.
 - `dataset.scrub_pii` / `--scrub-pii`: enable deterministic aliasing to anonymize user identifiers in the exported dataset. When on, every Discord author/mention is replaced with a friendly pseudonym, and `records.metadata.jsonl` records the alias used for the assistant persona.
 

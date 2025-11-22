@@ -1,6 +1,7 @@
 .pytest_cache/
 .venv/
 .env
+config.toml
 __pycache__/
 test.py
 .vscode/
@@ -10,9 +11,6 @@ test.py
 *.sqlite
 data/
 prompt.md
-debug_history.md
-debug_context.md
-debug_messages.json
+data/runtime/
 *.egg-info/
 .DS_Store
-tuner/config.toml

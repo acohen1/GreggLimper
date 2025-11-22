@@ -139,7 +139,9 @@ def _write_debug_file(
     filename: str, data, json_dump: bool = False
 ) -> None:  # pragma: no cover - debug helper
     try:
-        path = Path(filename)
+        base = Path("data/runtime")
+        base.mkdir(parents=True, exist_ok=True)
+        path = base / filename
         if json_dump:
             path.write_text(
                 json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"

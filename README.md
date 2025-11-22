@@ -19,7 +19,6 @@ Discord assistant for knowledge retrieval and response generation. Gregg Limper 
   - [Run the Bot](#run-the-bot)
   - [Run the Test Suite](#run-the-test-suite)
 - [Slash Commands](#slash-commands)
-- [Configuration Reference](#configuration-reference)
 - [Handler Registries](#handler-registries)
 - [Tuner Package](#tuner-package)
 - [Development Notes](#development-notes)
@@ -40,7 +39,7 @@ Gregg Limper is a Discord assistant that replies like a long-time regular who ne
 - Operators can highlight high-signal moments by reacting with approved emoji, promoting only those opted-in messages into long-term RAG storage (`event_hooks/reaction_hook.py`).
 - Dual model support: OpenAI APIs by default with optional local Ollama fallback (`config/local_llm.py`, `clients/ollama.py`).
 - Background maintenance that refreshes stale embeddings, keeps SQLite lean, and reconciles Milvus vector indexes (`memory/rag/scheduler.py`).
-- Debug-first ergonomics: cached fragments persist to disk, and every completion request records context and message payloads for inspection (`debug_history.md`, `debug_context.md`, `debug_messages.json`).
+- Debug-first ergonomics: cached fragments persist to disk, and every completion request records context and message payloads under `data/runtime/` (`debug_history.md`, `debug_context.md`, `debug_messages.json`).
 
 ## Architecture
 
@@ -116,6 +115,8 @@ The cache relies on the formatter to transform raw Discord messages into stable 
 ├── tests/                 # Root test tree (`tests/gregg_limper/`, `tests/tuner/`)
 ├── docs/                  # Milvus GPU setup and restart notebooks
 ├── data/                  # Default SQLite DB and memo snapshots (development)
+├── config.toml            # Unified config file (copy from config/config.sample.toml)
+├── .env                   # Environment variable overrides (copy from config/.env.example)
 ├── requirements.txt       # Dependency pin list (mirrors extras in pyproject)
 ├── pyproject.toml         # Build metadata and dependency declarations
 └── LICENSE                # MIT license
@@ -146,17 +147,10 @@ pip install -e .[test]     # editable install with test extras
 
 1. Copy the unified config template and tailor it:
    ```bash
-   cp config.sample.toml config.toml
+   cp config/config.sample.toml config.toml
    ```
-   - `[gregglimper.discord]`: set `channel_ids`; override `token_env`/`bot_user_id` if needed.
-   - `[gregglimper.models]`: set chat/image/web model IDs.
-   - `[gregglimper.limits]`, `[gregglimper.cache]`, `[gregglimper.retrieval]`, `[gregglimper.milvus]`, `[gregglimper.local_llm]`: tune behaviour, storage, and backends.
-   - `[finetune.*]`: set this if you plan to run the tuner.
-2. Copy `.env.example` to `.env` and add secrets only (Discord, OpenAI, Google Cloud). The env var names used come from the `token_env` fields in `config.toml`.
-3. To skip Milvus, set `gregglimper.milvus.enable_milvus = false`.
-4. To use a local Ollama model, set `gregglimper.local_llm.use_local = true` and point `local_server_url` / `local_model_id`.
-5. Configure `gregglimper.retrieval.rag_reaction_emojis` with the emoji descriptors (unicode, `<:name:id>`, `name:id`, numeric ID, or `:name:`) that should promote an opted-in message into long-term RAG storage.
-6. (Optional) Customize the bot’s persona via `gregglimper.persona_prompt_file` (default `data/persona_prompt.txt`, not committed). When the file exists, its contents are appended to the system prompt.
+2. Copy `config/.env.example` to `.env` and add secrets only (Discord, OpenAI, Google Cloud).
+3. See [config/CONFIG.md](config/CONFIG.md) for the full field breakdown (bot runtime plus `[finetune.*]` for the tuner) and the env var details.
 
 ### Run the Bot
 
@@ -191,22 +185,6 @@ Pytest targets live under two top-level packages:
 - `/rag_status` — Report whether the caller is currently opted in to retrieval.
 
 Additional commands can be added by creating new handlers under `src/gregg_limper/commands/handlers/` and decorating cogs with `@register_cog`.
-
-## Configuration Reference
-
-- **Config file:** config.toml (copy from config.sample.toml).
-  - [gregglimper.discord]: channel_ids, token_env (default DISCORD_API_TOKEN), bot_user_id.
-  - [gregglimper.models]: message_model, image_model, web_model.
-  - [gregglimper.limits]: context_length, max_image_mb, max_gif_mb, yt_thumbnail_size, yt_desc_max_len.
-  - [gregglimper.cache]: cache_length, memo_dir, cache_init_concurrency, cache_ingest_concurrency.
-  - [gregglimper.retrieval]: sql_db_dir, emb_model_id, emb_dim, maintenance_interval, rag_opt_in_lookback_days, rag_backfill_concurrency, rag_reaction_emojis, rag_vector_search_k.
-  - [gregglimper.milvus]: enable_milvus, host, port, collection, nlist, nprobe, delete_chunk.
-  - [gregglimper.local_llm]: use_local, local_model_id, local_server_url.
-  - [finetune.*]: dataset/model/output settings for the tuner CLI.
-- **Secrets (env):** set in .env using the env var names referenced by token_env keys.
-  - DISCORD_API_TOKEN: Discord bot token.
-  - OPENAI_API_KEY: OpenAI API key.
-  - GCLOUD_API_KEY: YouTube Data API key.
 
 ## Handler Registries
 
@@ -262,7 +240,7 @@ See [tuner/README.md](tuner/README.md) for full configuration and schema details
 - **Milvus connection errors:** `ready_hook.handle` runs `vector.health.validate_connection` and will log detailed GPU index failures. Disable Milvus or update credentials if validation raises.
 - **Consent issues:** `/rag_status` reflects the persisted consent table. Use `/optin enabled:false` to purge stored fragments for a user (`memory/rag/__init__.py::purge_user`).
 - **No reactions, no ingest:** Opted-in messages only reach long-term storage when they have a reaction listed in `RAG_REACTION_EMOJIS`. Verify the config and make sure moderators react to important posts.
-- **Prompt audits:** Each completion writes `debug_history.md`, `debug_context.md`, and `debug_messages.json` at the project root, mirroring exactly what was sent to the model.
+- **Prompt audits:** Each completion writes `debug_history.md`, `debug_context.md`, and `debug_messages.json` under `data/runtime/`, mirroring exactly what was sent to the model.
 - **Tool debugging:** Tool executions log their call IDs and arguments at INFO level (`gregg_limper.response`). Tool outputs appear in `debug_messages.json` as `role: "tool"` entries.
 - **Cache visibility:** Enable INFO logging to see `Cached msg ...` previews coming from `memory/cache/manager.py`. Use `GLCache().list_formatted_messages` in a REPL to inspect memo payloads.
 

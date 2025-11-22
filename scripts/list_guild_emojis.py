@@ -9,18 +9,18 @@ import tomllib
 from pathlib import Path
 from typing import Iterable, Sequence, Set
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tuner.discord_client import connect_tuner_client
 
-DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config.toml"
+DEFAULT_CONFIG = PROJECT_ROOT / "config.toml"
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="python -m tuner.scripts.list_guild_emojis",
+        prog="python scripts/list_guild_emojis.py",
         description="Dump all custom emoji definitions for one or more Discord servers.",
     )
     parser.add_argument(
@@ -199,8 +199,9 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     file_config, resolved_config_path = _load_file_config(args.config)
-    dataset_cfg = file_config.get("dataset", {})
-    discord_cfg = file_config.get("discord", {})
+    finetune_cfg = file_config.get("finetune", {}) if isinstance(file_config, dict) else {}
+    dataset_cfg = finetune_cfg.get("dataset", {}) or file_config.get("dataset", {})
+    discord_cfg = finetune_cfg.get("discord", {}) or file_config.get("discord", {})
 
     token = args.token
     token_env = args.token_env or discord_cfg.get("token_env", "DISCORD_API_TOKEN")
