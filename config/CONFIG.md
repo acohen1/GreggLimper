@@ -54,6 +54,6 @@ Set these in `.env` (the `token_env` keys in `config.toml` reference these names
 
 ### [finetune.*] (tuner)
 - `dataset`: Channels, allowed users, earliest timestamp, caps, paths, emoji whitelist, reuse/scrub flags.
+- `dataset.segment_leniency`: Segment approval strictness (`strict` | `default` | `lenient`) controlling the LLM/heuristic turn requirements.
 - `models`: Segment/moderation/relevance model IDs.
 - `discord`: `token_env` for the tuner Discord client.
-

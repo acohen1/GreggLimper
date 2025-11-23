@@ -18,6 +18,7 @@ class DatasetBuildConfig:
         max_messages: Upper bound of raw messages to fetch per channel.
         dry_run: When True, only report stats without writing files.
         segment_decider_model: Override model for segment LLM refinement.
+        segment_decider_leniency: Adjusts segment approval strictness (strict|default|lenient).
         moderation_model: Optional OpenAI model used to screen formatted samples.
         relevance_model: OpenAI model used to confirm the final assistant reply is relevant to the last user turn.
         scrub_pii: When True, anonymize user identifiers in the exported dataset.
@@ -39,6 +40,7 @@ class DatasetBuildConfig:
     max_samples: int | None = None
     dry_run: bool = False
     segment_decider_model: str | None = None
+    segment_decider_leniency: str = "default"
     moderation_model: str | None = None
     relevance_model: str | None = None
     scrub_pii: bool = False

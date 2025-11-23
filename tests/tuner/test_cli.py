@@ -20,6 +20,7 @@ raw_dump_dir = "raw"
 dry_run = true
 print_stats = true
 stats_path = "stats.json"
+segment_leniency = "default"
 
 [models]
 segment = "seg-model"
@@ -59,6 +60,7 @@ token_env = "TEST_TOKEN"
     assert config.raw_dump_dir == Path("raw")
     assert config.stats_path == Path("stats.json")
     assert config.segment_decider_model == "seg-model"
+    assert config.segment_decider_leniency == "default"
     assert config.discord_token == "disc-token"
     assert config.segment_decider_concurrency == 12
 

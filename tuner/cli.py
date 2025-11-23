@@ -120,6 +120,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Model ID to use for segment boundary LLM refinement (overrides config).",
     )
     build_cmd.add_argument(
+        "--segment-leniency",
+        type=str,
+        choices=["strict", "default", "lenient"],
+        default=None,
+        help="Segment approval leniency (strict|default|lenient, overrides config).",
+    )
+    build_cmd.add_argument(
         "--segment-concurrency",
         type=_positive_int,
         default=None,
@@ -280,6 +287,7 @@ def _resolve_dataset_config(
         assistant_emojis = {str(item) for item in assistant_cfg if str(item)}
 
     segment_model = args.segment_model or models_cfg.get("segment")
+    segment_leniency = args.segment_leniency or dataset_cfg.get("segment_leniency", "default")
     moderation_model = args.moderation_model or models_cfg.get("moderation")
     relevance_model = args.relevance_model or models_cfg.get("relevance") or segment_model
     if not segment_model:
@@ -303,6 +311,7 @@ def _resolve_dataset_config(
         max_samples=max_samples,
         dry_run=dry_run,
         segment_decider_model=segment_model,
+        segment_decider_leniency=str(segment_leniency),
         moderation_model=moderation_model,
         relevance_model=relevance_model,
         scrub_pii=scrub_pii,

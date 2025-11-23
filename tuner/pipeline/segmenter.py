@@ -168,10 +168,11 @@ async def refine_segments_with_llm(
     allowed = set(getattr(config, "allowed_user_ids", set()))
     default_decider: SegmentDecider | None = None
     model_id = getattr(config, "segment_decider_model", None)
+    leniency = getattr(config, "segment_decider_leniency", "default") or "default"
     if model_id:
         default_decider = cast(
             SegmentDecider,
-            partial(_llm_decide, model_id=model_id),
+            partial(_llm_decide, model_id=model_id, leniency=leniency),
         )
 
     candidates = list(candidates)
@@ -230,7 +231,7 @@ async def refine_segments_with_llm(
                     decision = None
 
             if decision is None and allow_fallback:
-                decision = _heuristic_decide(records, eligible_assistants)
+                decision = _heuristic_decide(records, eligible_assistants, leniency=leniency)
 
             if decision is not None:
                 refined.append(
@@ -266,7 +267,7 @@ async def refine_segments_with_llm(
                 processed += 1
                 continue
 
-            decision = _heuristic_decide(records, eligible_assistants)
+            decision = _heuristic_decide(records, eligible_assistants, leniency=leniency)
             if decision is None:
                 processed += 1
                 continue
@@ -303,21 +304,47 @@ async def _llm_decide(
     allowed_user_ids: Sequence[int],
     *,
     model_id: str,
+    leniency: str = "default",
 ) -> _SegmentDecision | None:
     allowed_text = ", ".join(str(uid) for uid in sorted(allowed_user_ids)) or "ANY"
     transcript = _format_for_llm(messages)
 
-    prompt = (
-        "You are curating Discord snippets for supervised finetuning.\n"
-        "Goal:\n"
-        "1. Keep only spans that read like a coherent conversation between a user cohort and one assistant persona.\n"
-        "2. The assistant must be one of the allowed user IDs and should speak at least twice with meaningful replies.\n"
-        "3. Preserve chronological order of the kept message IDs.\n"
-        "4. Drop the snippet entirely if it devolves into single-word replies, pure reaction spam, or lacks clear turns.\n"
-        "\nRespond ONLY with minified JSON matching:\n"
-        '{"keep": bool, "assistant_id": int, "message_ids": [int, ...]}.\n'
-        "If you reject the snippet, set keep=false and leave the other fields empty arrays/defaults."
-    )
+    if leniency == "strict":
+        prompt = (
+            "You are curating Discord snippets for supervised finetuning.\n"
+            "Goal:\n"
+            "1. Keep only spans that read like a coherent conversation between a user cohort and one assistant persona.\n"
+            "2. The assistant must be one of the allowed user IDs and should speak at least three times with meaningful replies.\n"
+            "3. Preserve chronological order of the kept message IDs.\n"
+            "4. Drop the snippet if it contains reaction spam, single-word replies, or lacks clear turns.\n"
+            "\nRespond ONLY with minified JSON matching:\n"
+            '{"keep": bool, "assistant_id": int, "message_ids": [int, ...]}.\n'
+            "If you reject the snippet, set keep=false and leave the other fields empty arrays/defaults."
+        )
+    elif leniency == "lenient":
+        prompt = (
+            "You are curating Discord snippets for supervised finetuning.\n"
+            "Goal:\n"
+            "1. Prefer spans that read like a coherent conversation between a user cohort and one assistant persona.\n"
+            "2. The assistant must be one of the allowed user IDs and should speak at least once; a single assistant reply is acceptable, ideally as the final turn.\n"
+            "3. Preserve chronological order of the kept message IDs.\n"
+            "4. Allow short or reaction-like replies unless the entire snippet is reaction spam with no real conversation.\n"
+            "\nRespond ONLY with minified JSON matching:\n"
+            '{"keep": bool, "assistant_id": int, "message_ids": [int, ...]}.\n'
+            "If you reject the snippet, set keep=false and leave the other fields empty arrays/defaults."
+        )
+    else:
+        prompt = (
+            "You are curating Discord snippets for supervised finetuning.\n"
+            "Goal:\n"
+            "1. Keep only spans that read like a coherent conversation between a user cohort and one assistant persona.\n"
+            "2. The assistant must be one of the allowed user IDs and should speak at least twice with meaningful replies.\n"
+            "3. Preserve chronological order of the kept message IDs.\n"
+            "4. Drop the snippet entirely if it devolves into single-word replies, pure reaction spam, or lacks clear turns.\n"
+            "\nRespond ONLY with minified JSON matching:\n"
+            '{"keep": bool, "assistant_id": int, "message_ids": [int, ...]}.\n'
+            "If you reject the snippet, set keep=false and leave the other fields empty arrays/defaults."
+        )
     response = await oai.chat(
         [
             {"role": "system", "content": prompt},
@@ -352,7 +379,10 @@ async def _llm_decide(
 def _heuristic_decide(
     messages: Sequence[Message],
     allowed_user_ids: Sequence[int],
+    *,
+    leniency: str = "default",
 ) -> _SegmentDecision | None:
+    min_assistant_turns = {"strict": 3, "lenient": 1}.get(leniency, 2)
     allowed = set(allowed_user_ids)
     counts: Counter[int] = Counter()
     for msg in messages:
@@ -367,7 +397,7 @@ def _heuristic_decide(
         return None
 
     assistant_id, turns = counts.most_common(1)[0]
-    if turns < 2:
+    if turns < min_assistant_turns:
         return None
 
     message_ids = [msg.id for msg in messages]
