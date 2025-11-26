@@ -51,6 +51,10 @@ async def build_dataset(config: DatasetBuildConfig) -> None:
         "segments_approved": 0,
         "segments_rejected": 0,
         "samples_prepared": 0,
+        "segments_missing_terminal_message": 0,
+        "segments_terminal_user": 0,
+        "segments_trimmed_terminal_assistant": 0,
+        "samples_rejected_formatter": 0,
         "sample_cap": config.max_samples,
         "dry_run": config.dry_run,
         "output_path": str(config.output_path),
@@ -136,16 +140,14 @@ async def _process_conversations(
     stats["segment_candidates"] = len(candidates)
 
     refined_segments: List[SegmentedConversation] | None = None
+    reused_segments = False
     if config.reuse_segments:
         refined_segments = _load_segments(config.segment_dump_dir)
         if refined_segments:
+            reused_segments = True
             stats["segments_approved"] = len(refined_segments)
             stats["segments_rejected"] = max(
                 stats["segment_candidates"] - stats["segments_approved"], 0
-            )
-            _log_stage(
-                3,
-                f"Reused {len(refined_segments)} cached segments.",
             )
 
     if refined_segments is None:
@@ -162,15 +164,25 @@ async def _process_conversations(
         if stats["segment_candidates"]
         else 0
     )
-    _log_stage(
-        3,
-        "LLM approved %d/%d segments (%.1f%%)."
-        % (
-            stats["segments_approved"],
-            stats["segment_candidates"],
-            approval_rate,
-        ),
-    )
+    if reused_segments:
+        _log_stage(
+            3,
+            "Skipped LLM refinement; reused %d cached segments (%.1f%% of candidates)."
+            % (
+                stats["segments_approved"],
+                approval_rate,
+            ),
+        )
+    else:
+        _log_stage(
+            3,
+            "LLM approved %d/%d segments (%.1f%%)."
+            % (
+                stats["segments_approved"],
+                stats["segment_candidates"],
+                approval_rate,
+            ),
+        )
 
     samples: List[TrainingSample] = []
     total_segments = len(refined_segments)
@@ -182,20 +194,39 @@ async def _process_conversations(
     moderation_model = config.moderation_model
     log_interval = max(1, total_segments // 10)
     for processed, segment in enumerate(refined_segments, start=1):
-        relabeled_history = await relabel_segment(
+        trimmed_ids, dropped, missing = _trim_to_terminal_assistant(
             segment, message_lookup=message_lookup
         )
-        if message_lookup.get(segment.message_ids[-1]) is None:
-            logger.warning(
-                "Skipping segment %s due to missing terminal message",
+        if missing:
+            stats["segments_missing_terminal_message"] += 1
+        if dropped:
+            stats["segments_trimmed_terminal_assistant"] += 1
+        if not trimmed_ids:
+            stats["segments_terminal_user"] += 1
+            logger.debug(
+                "Skipping segment %s after trimming; no assistant replies found.",
                 segment.message_ids,
             )
             continue
+
+        trimmed_segment = SegmentedConversation(
+            channel_id=segment.channel_id,
+            message_ids=trimmed_ids,
+            assigned_assistant_id=segment.assigned_assistant_id,
+        )
+        relabeled_history = await relabel_segment(
+            trimmed_segment, message_lookup=message_lookup
+        )
         sample = await build_prompt_shaped_sample(
-            segment=segment,
+            segment=trimmed_segment,
             relabeled_history=relabeled_history,
         )
         if sample is None:
+            stats["samples_rejected_formatter"] += 1
+            logger.debug(
+                "Formatter dropped segment %s; sanitized history had no terminal assistant turn",
+                trimmed_segment.message_ids,
+            )
             continue
 
         if config.segment_decider_model:
@@ -245,6 +276,41 @@ async def _process_conversations(
     )
 
     return samples
+
+
+def _trim_to_terminal_assistant(
+    segment: SegmentedConversation, *, message_lookup: Dict[int, Message]
+) -> tuple[list[int], int, int]:
+    """
+    Walk backward until the last message is from the assigned assistant.
+
+    Returns:
+        trimmed_ids: message id list ending with assistant or empty if none exist.
+        dropped: how many ids were removed.
+        missing: 1 if any missing messages were encountered, else 0.
+    """
+
+    trimmed = list(segment.message_ids)
+    dropped = 0
+    missing = 0
+
+    while trimmed:
+        last_id = trimmed[-1]
+        message = message_lookup.get(last_id)
+        if message is None:
+            missing = 1
+            trimmed.pop()
+            dropped += 1
+            continue
+
+        author_id = getattr(message.author, "id", None)
+        if author_id == segment.assigned_assistant_id:
+            return trimmed, dropped, missing
+
+        trimmed.pop()
+        dropped += 1
+
+    return [], dropped, missing
 
 
 def _index_messages(conversations) -> Dict[int, Message]:
