@@ -1,0 +1,480 @@
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import Dict, List
+
+from discord import Message
+
+from .config import DatasetBuildConfig
+from .discord_client import connect_tuner_client
+from .pipeline import TrainingSample
+from .pipeline.moderation import moderate_messages
+from .pipeline.types import SegmentedConversation
+from .util.alias import AliasGenerator, scrub_text, ensure_meta
+from .pipeline.collector import collect_history, persist_raw_conversations
+from .pipeline.formatter import build_prompt_shaped_sample
+from .pipeline.relabel import relabel_segment
+from .pipeline.segmenter import (
+    drop_ineligible_candidates,
+    propose_segments,
+    refine_segments_with_llm,
+)
+from .pipeline.relevance import is_relevant
+
+logger = logging.getLogger(__name__)
+
+TOTAL_PROGRESS_STEPS = 5
+
+
+async def build_dataset(config: DatasetBuildConfig) -> None:
+    """
+    High-level orchestration for dataset construction.
+
+    Steps:
+        1. Collect filtered Discord history.
+        2. Generate deterministic segment candidates.
+        3. Run LLM refinement to enforce clean dialogue turns.
+        4. Relabel user/assistant roles.
+        5. Format samples like debug_messages.json and export JSONL.
+    """
+
+    logger.info("Starting dataset build for %d channels", len(config.channel_ids))
+    if not config.discord_token:
+        raise ValueError("Discord API token is required to hydrate history.")
+    stats = {
+        "channels_requested": len(config.channel_ids),
+        "channels_collected": 0,
+        "messages_collected": 0,
+        "segment_candidates": 0,
+        "segments_approved": 0,
+        "segments_rejected": 0,
+        "samples_prepared": 0,
+        "segments_missing_terminal_message": 0,
+        "segments_terminal_user": 0,
+        "segments_trimmed_terminal_assistant": 0,
+        "samples_rejected_formatter": 0,
+        "sample_cap": config.max_samples,
+        "dry_run": config.dry_run,
+        "output_path": str(config.output_path),
+        "raw_dump_dir": str(config.raw_dump_dir),
+    }
+
+    if config.max_samples:
+        logger.info("Sample cap enabled: %d max supervised records", config.max_samples)
+
+    async with connect_tuner_client(config.discord_token) as client:
+        raw_conversations = await collect_history(
+            client=client,
+            config=config,
+            reuse_raw=config.reuse_raw,
+        )
+
+    alias_generator = AliasGenerator() if config.scrub_pii else None
+    alias_map = _scrub_conversations(raw_conversations, alias_generator)
+
+    stats["channels_collected"] = len(raw_conversations)
+    stats["messages_collected"] = sum(
+        len(convo.messages) for convo in raw_conversations
+    )
+
+    if config.reuse_raw:
+        _log_stage(
+            1,
+            f"Reused {stats['messages_collected']} cached messages across {len(raw_conversations)} channels.",
+        )
+    else:
+        persist_raw_conversations(raw_conversations, destination=config.raw_dump_dir)
+        _log_stage(
+            1,
+            f"Hydrated {stats['messages_collected']} messages across {len(raw_conversations)} channels.",
+        )
+
+    samples = await _process_conversations(
+        config,
+        stats,
+        raw_conversations,
+        alias_map=alias_map,
+    )
+
+    if config.dry_run:
+        _log_stage(5, "Dry run complete; skipped dataset write.")
+        _emit_stats(stats, config=config)
+        return
+
+    _write_dataset(config.output_path, samples)
+    _log_stage(5, f"Wrote {len(samples)} samples to {config.output_path}")
+    _emit_stats(stats, config=config)
+
+
+async def _process_conversations(
+    config: DatasetBuildConfig,
+    stats: dict,
+    raw_conversations,
+    *,
+    alias_map: dict[int, str],
+) -> List[TrainingSample]:
+    candidates = propose_segments(raw_conversations)
+    raw_candidate_count = len(candidates)
+
+    _log_stage(
+        2,
+        f"Chunked conversations into {raw_candidate_count} segment candidates.",
+    )
+
+    message_lookup = _index_messages(raw_conversations)
+    candidates, pruned = drop_ineligible_candidates(
+        candidates,
+        message_lookup=message_lookup,
+        config=config,
+    )
+    if pruned:
+        logger.info(
+            "Segmenter: pruned %d candidates with no eligible assistants (%d remain).",
+            pruned,
+            len(candidates),
+        )
+
+    stats["segment_candidates_raw"] = raw_candidate_count
+    stats["segment_candidates"] = len(candidates)
+
+    refined_segments: List[SegmentedConversation] | None = None
+    reused_segments = False
+    if config.reuse_segments:
+        refined_segments = _load_segments(config.segment_dump_dir)
+        if refined_segments:
+            reused_segments = True
+            stats["segments_approved"] = len(refined_segments)
+            stats["segments_rejected"] = max(
+                stats["segment_candidates"] - stats["segments_approved"], 0
+            )
+
+    if refined_segments is None:
+        refined_segments = await refine_segments_with_llm(
+            candidates, message_lookup=message_lookup, config=config
+        )
+        stats["segments_approved"] = len(refined_segments)
+        stats["segments_rejected"] = max(
+            stats["segment_candidates"] - stats["segments_approved"], 0
+        )
+        _persist_segments(config.segment_dump_dir, refined_segments)
+    approval_rate = (
+        (stats["segments_approved"] / stats["segment_candidates"]) * 100
+        if stats["segment_candidates"]
+        else 0
+    )
+    if reused_segments:
+        _log_stage(
+            3,
+            "Skipped LLM refinement; reused %d cached segments (%.1f%% of candidates)."
+            % (
+                stats["segments_approved"],
+                approval_rate,
+            ),
+        )
+    else:
+        _log_stage(
+            3,
+            "LLM approved %d/%d segments (%.1f%%)."
+            % (
+                stats["segments_approved"],
+                stats["segment_candidates"],
+                approval_rate,
+            ),
+        )
+
+    samples: List[TrainingSample] = []
+    total_segments = len(refined_segments)
+    if total_segments == 0:
+        _log_stage(4, "No eligible segments after refinement.")
+        stats["samples_prepared"] = 0
+        return samples
+
+    moderation_model = config.moderation_model
+    log_interval = max(1, total_segments // 10)
+    for processed, segment in enumerate(refined_segments, start=1):
+        trimmed_ids, dropped, missing = _trim_to_terminal_assistant(
+            segment, message_lookup=message_lookup
+        )
+        if missing:
+            stats["segments_missing_terminal_message"] += 1
+        if dropped:
+            stats["segments_trimmed_terminal_assistant"] += 1
+        if not trimmed_ids:
+            stats["segments_terminal_user"] += 1
+            logger.debug(
+                "Skipping segment %s after trimming; no assistant replies found.",
+                segment.message_ids,
+            )
+            continue
+
+        trimmed_segment = SegmentedConversation(
+            channel_id=segment.channel_id,
+            message_ids=trimmed_ids,
+            assigned_assistant_id=segment.assigned_assistant_id,
+        )
+        relabeled_history = await relabel_segment(
+            trimmed_segment, message_lookup=message_lookup
+        )
+        sample = await build_prompt_shaped_sample(
+            segment=trimmed_segment,
+            relabeled_history=relabeled_history,
+        )
+        if sample is None:
+            stats["samples_rejected_formatter"] += 1
+            logger.debug(
+                "Formatter dropped segment %s; sanitized history had no terminal assistant turn",
+                trimmed_segment.message_ids,
+            )
+            continue
+
+        if config.segment_decider_model:
+            relevant = await is_relevant(
+                sample.messages,
+                model=config.segment_decider_model,
+            )
+            if not relevant:
+                stats.setdefault("samples_blocked_relevance", 0)
+                stats["samples_blocked_relevance"] += 1
+                logger.info(
+                    "Relevance gate dropped segment %s (assistant not tied to last user).",
+                    segment.message_ids,
+                )
+                continue
+
+        if moderation_model:
+            keep = await moderate_messages(sample.messages, model=moderation_model)
+            if not keep:
+                logger.info(
+                    "Moderation flagged segment %s; dropping sample.",
+                    segment.message_ids,
+                )
+                stats.setdefault("samples_blocked_moderation", 0)
+                stats["samples_blocked_moderation"] += 1
+                continue
+        if alias_map:
+            sample.metadata["assistant_alias"] = alias_map.get(segment.assigned_assistant_id)
+
+        samples.append(sample)
+
+        if processed % log_interval == 0 or processed == total_segments:
+            _log_sample_progress(processed, total_segments, len(samples), config.max_samples)
+
+        if config.max_samples is not None and len(samples) >= config.max_samples:
+            logger.info(
+                "Reached max sample cap (%d); stopping collection.",
+                config.max_samples,
+            )
+            break
+
+    stats["samples_prepared"] = len(samples)
+    cap_note = f" (cap {config.max_samples})" if config.max_samples else ""
+    _log_stage(
+        4,
+        f"Built {stats['samples_prepared']} supervised samples{cap_note}.",
+    )
+
+    return samples
+
+
+def _trim_to_terminal_assistant(
+    segment: SegmentedConversation, *, message_lookup: Dict[int, Message]
+) -> tuple[list[int], int, int]:
+    """
+    Walk backward until the last message is from the assigned assistant.
+
+    Returns:
+        trimmed_ids: message id list ending with assistant or empty if none exist.
+        dropped: how many ids were removed.
+        missing: 1 if any missing messages were encountered, else 0.
+    """
+
+    trimmed = list(segment.message_ids)
+    dropped = 0
+    missing = 0
+
+    while trimmed:
+        last_id = trimmed[-1]
+        message = message_lookup.get(last_id)
+        if message is None:
+            missing = 1
+            trimmed.pop()
+            dropped += 1
+            continue
+
+        author_id = getattr(message.author, "id", None)
+        if author_id == segment.assigned_assistant_id:
+            return trimmed, dropped, missing
+
+        trimmed.pop()
+        dropped += 1
+
+    return [], dropped, missing
+
+
+def _index_messages(conversations) -> Dict[int, Message]:
+    lookup: dict[int, Message] = {}
+    for convo in conversations:
+        for msg in convo.messages:
+            lookup[msg.id] = msg
+    return lookup
+
+
+def _write_dataset(path: Path, samples: List[TrainingSample]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path = path.with_name("records.metadata.jsonl")
+
+    with path.open("w", encoding="utf-8") as handle, metadata_path.open(
+        "w", encoding="utf-8"
+    ) as meta_handle:
+        for idx, sample in enumerate(samples, start=1):
+            handle.write(
+                json.dumps(
+                    {"messages": sample.messages},
+                    ensure_ascii=False,
+                )
+            )
+            handle.write("\n")
+
+            meta_handle.write(
+                json.dumps(sample.metadata, ensure_ascii=False)
+            )
+            meta_handle.write("\n")
+
+    logger.info(
+        "Wrote %d samples to %s (metadata at %s)",
+        len(samples),
+        path,
+        metadata_path,
+    )
+    return path
+
+
+def _scrub_conversations(conversations, alias_generator: AliasGenerator | None) -> dict[int, str]:
+    alias_map: dict[int, str] = {}
+    if not alias_generator:
+        return alias_map
+
+    for convo in conversations:
+        for message in convo.messages:
+            author = getattr(message, "author", None)
+            user_id = getattr(author, "id", None)
+            alias = alias_generator.alias(user_id)
+            if user_id is not None:
+                alias_map[user_id] = alias
+
+            meta = ensure_meta(message)
+            meta["author_alias"] = alias
+
+            _set_attr_if_possible(author, "display_name", alias)
+            _set_attr_if_possible(author, "name", alias)
+
+            for attr in ("clean_content", "content"):
+                value = getattr(message, attr, None)
+                if isinstance(value, str) and value:
+                    sanitized = scrub_text(value, alias_generator.alias)
+                    meta[attr] = sanitized
+
+            mentions = getattr(message, "mentions", None)
+            if mentions:
+                sanitized_mentions = []
+                for mention in mentions:
+                    mention_id = getattr(mention, "id", None)
+                    mention_alias = alias_generator.alias(mention_id)
+                    if mention_id is not None:
+                        alias_map.setdefault(mention_id, mention_alias)
+                    _set_attr_if_possible(mention, "display_name", mention_alias)
+                    _set_attr_if_possible(mention, "name", mention_alias)
+                    sanitized_mentions.append(
+                        {
+                            "id": mention_id,
+                            "display_name": mention_alias,
+                            "name": mention_alias,
+                        }
+                    )
+                meta["mentions"] = sanitized_mentions
+
+    return alias_map
+
+
+def _set_attr_if_possible(obj, attr: str, value: str) -> None:
+    if obj is None:
+        return
+    try:
+        setattr(obj, attr, value)
+    except (AttributeError, TypeError):
+        pass
+
+
+def _emit_stats(stats: dict, *, config: DatasetBuildConfig) -> None:
+    if not config.print_stats and not config.stats_path:
+        return
+
+    payload = json.dumps(stats, indent=2, ensure_ascii=False)
+    if config.print_stats:
+        logger.info("Dataset build statistics:\n%s", payload)
+    if config.stats_path:
+        config.stats_path.parent.mkdir(parents=True, exist_ok=True)
+        config.stats_path.write_text(payload, encoding="utf-8")
+        logger.info("Wrote stats to %s", config.stats_path)
+
+
+def _log_stage(stage_idx: int, message: str) -> None:
+    logger.info(
+        "[Progress %d/%d] %s",
+        stage_idx,
+        TOTAL_PROGRESS_STEPS,
+        message,
+    )
+
+
+def _log_sample_progress(processed: int, total: int, built: int, cap: int | None) -> None:
+    percent = (processed / total) * 100 if total else 100
+    logger.info(
+        "Building samples: %d/%d segments processed (%.1f%%), %d samples ready%s.",
+        processed,
+        total,
+        percent,
+        built,
+        f" / cap {cap}" if cap is not None else "",
+    )
+
+
+def _persist_segments(directory: Path, segments: List[SegmentedConversation]) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "segments.json"
+    payload = [
+        {
+            "channel_id": seg.channel_id,
+            "message_ids": seg.message_ids,
+            "assistant_user_id": seg.assigned_assistant_id,
+        }
+        for seg in segments
+    ]
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    logger.info("Cached %d refined segments at %s", len(segments), path)
+
+
+def _load_segments(directory: Path) -> List[SegmentedConversation] | None:
+    path = directory / "segments.json"
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        segments = [
+            SegmentedConversation(
+                channel_id=item["channel_id"],
+                message_ids=item["message_ids"],
+                assigned_assistant_id=item["assistant_user_id"],
+            )
+            for item in payload
+        ]
+        logger.info("Loaded %d cached segments from %s", len(segments), path)
+        return segments
+    except Exception:
+        logger.warning("Failed to load cached segments from %s", path, exc_info=True)
+        return None
+
+
+__all__ = ["build_dataset"]
