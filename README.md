@@ -77,18 +77,20 @@ The cache relies on the formatter to transform raw Discord messages into stable 
 
 ### Prompt Orchestration
 
-`response.pipeline.build_prompt_payload` assembles the final chat request:
+### Prompt Orchestration
 
-1. `response.history.build_history` serializes cached messages into user/assistant turns up to `core.CONTEXT_LENGTH`.
-2. `response.context.gather_context` pulls channel summaries and opt-in user profiles; deeper history is fetched on demand via tools.
-3. Messages are merged with the system prompt from `response.system_prompt.get_system_prompt`, yielding a fully grounded `messages` list.
-4. The bot calls OpenAI (`clients/oai.chat_full`) or a configured local Ollama model (`clients/ollama.chat`). When the model issues tool calls, the loop executes the requested tools, appends their outputs, and resubmits the conversation until a final reply is produced.
-5. **Accumulation Loop:** If configured, the final response is checked by a "Detail Classifier". If deemed incomplete, the bot re-prompts the model to add more detail, appending the new text to the response (`response/accumulator.py`).
+`response.handle` orchestrates a modular Chain-of-Thought (CoT) pipeline:
+
+1.  **Context Gathering (`steps/context.py`)**: Fetches history, channel summaries, and user profiles to build the initial `PromptPayload`.
+2.  **Tool Execution (`steps/tools.py`)**: A dedicated "smart model" (`TOOL_CHECK_MODEL_ID`) analyzes the context to decide if tools are needed. It executes them *before* the main generation, injecting results as system messages and capturing "artifacts" (like GIFs) for direct inclusion.
+3.  **Generation (`steps/generation.py`)**: The main persona model generates the response text, now freed from the responsibility of calling tools itself.
+4.  **Refinement (`steps/refinement.py`)**: If configured, a "Detail Classifier" checks the response for completeness. If lacking, it triggers an iterative rewrite loop to flesh out the details.
 
 ### Tool Calling
 
-- Tool metadata lives in `src/gregg_limper/tools/__init__.py`; individual handlers reside in `src/gregg_limper/tools/handlers/` and register themselves with the shared decorator.
-- The `retrieve_context` tool reuses the RAG pipeline to surface prior fragments only when the assistant asks for them, keeping the base prompt slim.
+- Tool metadata lives in `src/gregg_limper/tools/__init__.py`; individual handlers reside in `src/gregg_limper/tools/handlers/`.
+- **Decoupled Execution**: Tools are no longer called by the persona model. Instead, the `ToolExecutionStep` uses a specialized model (e.g., `gpt-5.1-nano`) to handle all functional logic, ensuring reliability and separating "reasoning" from "voice".
+- The `retrieve_context` tool reuses the RAG pipeline to surface prior fragments only when the assistant asks for them.
 - Tool execution is logged (`response.__init__`), cached per call signature, and visible in `debug_messages.json` via synthetic `role: "tool"` entries.
 
 ### Background Maintenance
@@ -110,7 +112,9 @@ The cache relies on the formatter to transform raw Discord messages into stable 
 │   ├── event_hooks/       # Discord event routers (ready/message/reaction)
 │   ├── formatter/         # Message classification and fragment builders
 │   ├── memory/            # Cache + RAG storage, ingestion, and scheduling
-│   ├── response/          # Prompt assembly and completion orchestration
+│   ├── response/          # CoT Pipeline Engine
+│   │   ├── steps/         # Pipeline steps (Context, Tools, Gen, Refine)
+│   │   └── sources/       # Data sources (History, Payload, Context)
 │   ├── tools/             # Tool registry, execution helpers, and handlers
 │   └── maintenance.py     # Shared utilities for background tasks
 ├── tuner/                 # Standalone finetuner CLI (see tuner/README.md)
