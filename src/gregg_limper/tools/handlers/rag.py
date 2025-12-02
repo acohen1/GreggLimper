@@ -16,7 +16,7 @@ _DEFAULT_RESULTS = min(3, _MAX_RESULTS)
 @register_tool(
     ToolSpec(
         name="retrieve_context",
-        description="Search cached memories relevant to the given query.",
+        description="Search the server's history for past events or context. Use this tool when the user talks about something that happened in the past, references previous conversations, or when you need to recall specific details from the server's history to answer a question. This is useful for providing context-aware responses based on prior interactions.",
         parameters={
             "type": "object",
             "properties": {
