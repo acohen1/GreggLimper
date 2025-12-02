@@ -40,6 +40,7 @@ Gregg Limper is a Discord assistant that replies like a long-time regular who ne
 - Dual model support: OpenAI APIs by default with optional local Ollama fallback (`config/local_llm.py`, `clients/ollama.py`).
 - Background maintenance that refreshes stale embeddings, keeps SQLite lean, and reconciles Milvus vector indexes (`memory/rag/scheduler.py`).
 - **Multi-Pass Response Accumulation:** Iteratively prompts the model to flesh out brief responses, using a lightweight classifier to ensure completeness (`response/accumulator.py`).
+- **Responsive UX:** Displays a "Typing..." indicator in Discord throughout the entire Chain-of-Thought process, giving users visual feedback while the bot reasons and generates.
 - Debug-first ergonomics: cached fragments persist to disk, and every completion request records context and message payloads under `data/runtime/` (`debug_history.md`, `debug_context.md`, `debug_messages.json`).
 
 ## Architecture

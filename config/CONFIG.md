@@ -23,6 +23,7 @@ Set these in `.env` (the `token_env` keys in `config.toml` reference these names
 - `web_model`: Model used for web summaries.
 - `detail_check_model`: Model used to check response completeness (optional).
 - `tool_check_model`: Model used for the decoupled tool execution step (optional, defaults to `detail_check_model`).
+- `reasoning_model`: Model used for the reasoning step (optional, defaults to `detail_check_model`).
 
 ### [gregglimper.limits]
 - `context_length`: Recent cached messages included per prompt.
