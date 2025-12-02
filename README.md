@@ -39,6 +39,7 @@ Gregg Limper is a Discord assistant that replies like a long-time regular who ne
 - Operators can highlight high-signal moments by reacting with approved emoji, promoting only those opted-in messages into long-term RAG storage (`event_hooks/reaction_hook.py`).
 - Dual model support: OpenAI APIs by default with optional local Ollama fallback (`config/local_llm.py`, `clients/ollama.py`).
 - Background maintenance that refreshes stale embeddings, keeps SQLite lean, and reconciles Milvus vector indexes (`memory/rag/scheduler.py`).
+- **Multi-Pass Response Accumulation:** Iteratively prompts the model to flesh out brief responses, using a lightweight classifier to ensure completeness (`response/accumulator.py`).
 - Debug-first ergonomics: cached fragments persist to disk, and every completion request records context and message payloads under `data/runtime/` (`debug_history.md`, `debug_context.md`, `debug_messages.json`).
 
 ## Architecture
@@ -82,6 +83,7 @@ The cache relies on the formatter to transform raw Discord messages into stable 
 2. `response.context.gather_context` pulls channel summaries and opt-in user profiles; deeper history is fetched on demand via tools.
 3. Messages are merged with the system prompt from `response.system_prompt.get_system_prompt`, yielding a fully grounded `messages` list.
 4. The bot calls OpenAI (`clients/oai.chat_full`) or a configured local Ollama model (`clients/ollama.chat`). When the model issues tool calls, the loop executes the requested tools, appends their outputs, and resubmits the conversation until a final reply is produced.
+5. **Accumulation Loop:** If configured, the final response is checked by a "Detail Classifier". If deemed incomplete, the bot re-prompts the model to add more detail, appending the new text to the response (`response/accumulator.py`).
 
 ### Tool Calling
 
@@ -242,7 +244,8 @@ See [tuner/README.md](tuner/README.md) for full configuration and schema details
 - **No reactions, no ingest:** Opted-in messages only reach long-term storage when they have a reaction listed in `RAG_REACTION_EMOJIS`. Verify the config and make sure moderators react to important posts.
 - **Prompt audits:** Each completion writes `debug_history.md`, `debug_context.md`, and `debug_messages.json` under `data/runtime/`, mirroring exactly what was sent to the model.
 - **Tool debugging:** Tool executions log their call IDs and arguments at INFO level (`gregg_limper.response`). Tool outputs appear in `debug_messages.json` as `role: "tool"` entries.
-- **Cache visibility:** Enable INFO logging to see `Cached msg ...` previews coming from `memory/cache/manager.py`. Use `GLCache().list_formatted_messages` in a REPL to inspect memo payloads.
+- **Cache visibility:** Enable INFO logging to see Cached msg ... previews coming from memory/cache/manager.py. Use GLCache().list_formatted_messages in a REPL to inspect memo payloads.
+- **Response Accumulation:** If the bot feels "stuck" in a loop or responses are too long, check DETAIL_CHECK_MAX_LOOPS (default 3) or disable the feature by unsetting DETAIL_CHECK_MODEL_ID.
 
 ## Further Reading
 

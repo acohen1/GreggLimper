@@ -18,6 +18,7 @@ from gregg_limper.tools import (
 )
 from gregg_limper.tools.executor import execute_tool
 
+from .accumulator import accumulate_response
 from .pipeline import build_prompt_payload
 
 logger = logging.getLogger(__name__)
@@ -31,28 +32,34 @@ async def handle(message: discord.Message) -> str:
     tool_specs = get_registered_tool_specs()
     use_tools = bool(tool_specs) and not local_llm.USE_LOCAL
 
-    messages = list(payload.messages)
+    async def runner(msgs: list[dict[str, str]]) -> tuple[str, list[dict[str, str]]]:
+        if local_llm.USE_LOCAL or not use_tools:
+            result_text = (
+                await ollama.chat(msgs, model=local_llm.LOCAL_MODEL_ID)
+                if local_llm.USE_LOCAL
+                else await oai.chat(msgs, model=core.MSG_MODEL_ID)
+            )
+            final_msgs = list(msgs) + [{"role": "assistant", "content": result_text}]
+            return result_text, final_msgs
 
-    if local_llm.USE_LOCAL or not use_tools:
-        result_text = (
-            await ollama.chat(messages, model=local_llm.LOCAL_MODEL_ID)
-            if local_llm.USE_LOCAL
-            else await oai.chat(messages, model=core.MSG_MODEL_ID)
+        return await _run_with_tools(
+            messages=msgs,
+            tool_specs=tool_specs,
+            context=ToolContext(
+                guild_id=getattr(message.guild, "id", None),
+                channel_id=getattr(message.channel, "id", None),
+                message_id=getattr(message, "id", None),
+            ),
         )
-        _write_debug_payload(payload, messages)
-        return result_text
 
-    result_text, final_messages = await _run_with_tools(
-        messages=messages,
-        tool_specs=tool_specs,
-        context=ToolContext(
-            guild_id=getattr(message.guild, "id", None),
-            channel_id=getattr(message.channel, "id", None),
-            message_id=getattr(message, "id", None),
-        ),
-    )
+    # Initial run
+    initial_text, final_messages = await runner(list(payload.messages))
+
+    # Accumulate
+    final_text = await accumulate_response(initial_text, payload, runner)
+
     _write_debug_payload(payload, final_messages)
-    return result_text
+    return final_text
 
 
 def _write_debug_payload(payload, final_messages: Iterable[dict[str, str]]) -> None:
