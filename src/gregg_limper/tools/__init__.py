@@ -76,7 +76,8 @@ class ToolContext:
 class ToolResult:
     """Normalized tool output returned to the LLM."""
 
-    content: str
+    context_content: str
+    response_content: str | None = None
 
 
 class ToolExecutionError(RuntimeError):

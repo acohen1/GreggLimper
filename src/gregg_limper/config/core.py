@@ -36,6 +36,7 @@ class Core:
         self.IMG_MODEL_ID: str | None = models_cfg.get("image_model") or os.getenv("IMG_MODEL_ID")
         self.WEB_MODEL_ID: str | None = models_cfg.get("web_model") or os.getenv("WEB_MODEL_ID")
         self.DETAIL_CHECK_MODEL_ID: str | None = models_cfg.get("detail_check_model") or os.getenv("DETAIL_CHECK_MODEL_ID")
+        self.TOOL_CHECK_MODEL_ID: str | None = models_cfg.get("tool_check_model") or os.getenv("TOOL_CHECK_MODEL_ID") or self.DETAIL_CHECK_MODEL_ID
 
         self.CONTEXT_LENGTH: int = int(limits_cfg.get("context_length", os.getenv("CONTEXT_LENGTH", "10")))
         self.DETAIL_CHECK_MAX_LOOPS: int = int(limits_cfg.get("detail_check_max_loops", os.getenv("DETAIL_CHECK_MAX_LOOPS", "3")))
