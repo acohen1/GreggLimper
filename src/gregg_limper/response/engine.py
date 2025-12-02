@@ -10,6 +10,7 @@ from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from gregg_limper.response.sources.payload import PromptPayload
+    from gregg_limper.response.tracer import PipelineTracer
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +67,9 @@ class ResponsePipeline:
     Orchestrates the execution of pipeline steps.
     """
     
-    def __init__(self, steps: list[PipelineStep]):
+    def __init__(self, steps: list[PipelineStep], tracer: PipelineTracer | None = None):
         self.steps = steps
+        self.tracer = tracer
         
     async def run(self, context: PipelineContext) -> str:
         """
@@ -75,12 +77,21 @@ class ResponsePipeline:
         """
         current_context = context
         
+        # Capture initial state
+        if self.tracer:
+            self.tracer.capture("Start", current_context)
+        
         for i, step in enumerate(self.steps):
             step_name = step.__class__.__name__
             logger.debug("Running pipeline step %d: %s", i + 1, step_name)
             
             try:
                 current_context = await step.run(current_context)
+                
+                # Capture state after step
+                if self.tracer:
+                    self.tracer.capture(step_name, current_context)
+                    
             except Exception as e:
                 logger.error("Pipeline step %s failed: %s", step_name, e)
                 raise

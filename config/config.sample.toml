@@ -15,6 +15,7 @@ image_model = "gpt-image-1"
 web_model = "gpt-4o-mini-search-preview"
 detail_check_model = "gpt-5.1-nano-2025-08-07"
 tool_check_model = "gpt-5.1-nano-2025-08-07"
+reasoning_model = "gpt-5.1-nano-2025-08-07"
 
 [gregglimper.limits]
 context_length = 100
