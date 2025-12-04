@@ -23,6 +23,8 @@ max_gif_mb = 50
 yt_thumbnail_size = "medium"
 yt_desc_max_len = 200
 relevancy_check_max_loops = 5
+min_regen_temp = 0.7
+max_regen_temp = 1.0
 
 [gregglimper.cache]
 cache_length = 200

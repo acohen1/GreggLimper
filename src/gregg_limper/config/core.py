@@ -40,6 +40,8 @@ class Core:
 
         self.CONTEXT_LENGTH: int = int(limits_cfg.get("context_length", os.getenv("CONTEXT_LENGTH", "10")))
         self.RELEVANCY_CHECK_MAX_LOOPS: int = int(limits_cfg.get("relevancy_check_max_loops", os.getenv("RELEVANCY_CHECK_MAX_LOOPS", "3")))
+        self.RELEVANCY_REGEN_TEMP_MIN: float = float(limits_cfg.get("min_regen_temp", os.getenv("MIN_REGEN_TEMP", "0.7")))
+        self.RELEVANCY_REGEN_TEMP_MAX: float = float(limits_cfg.get("max_regen_temp", os.getenv("MAX_REGEN_TEMP", "1.0")))
         self.MAX_IMAGE_MB: int = int(limits_cfg.get("max_image_mb", os.getenv("MAX_IMAGE_MB", "5")))
         self.MAX_GIF_MB: int = int(limits_cfg.get("max_gif_mb", os.getenv("MAX_GIF_MB", "10")))
         self.YT_THUMBNAIL_SIZE: str = str(limits_cfg.get("yt_thumbnail_size", os.getenv("YT_THUMBNAIL_SIZE", "medium")))
