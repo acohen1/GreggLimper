@@ -32,13 +32,21 @@ async def test_tracer_capture_and_write(tmp_path):
             data = json.load(f)
             
         assert data["trace_id"].startswith("trace_")
+        assert "total_latency_ms" in data
+        assert data["final_response"] == "Test Response"
+        
         assert len(data["steps"]) == 1
         step = data["steps"][0]
         assert step["step"] == "TestStep"
         assert step["response_text"] == "Test Response"
         assert step["response_fragments"] == ["http://example.com"]
         assert step["message_count"] == 1
-        assert step["last_message"]["content"] == "Hi"
+        
+        # Check new fields
+        assert "latency_ms" in step
+        assert "elapsed_ms" in step
+        assert len(step["new_messages"]) == 1
+        assert step["new_messages"][0]["content"] == "Hi"
 
 @pytest.mark.asyncio
 async def test_tracer_integration_mock():

@@ -11,11 +11,10 @@ channel_ids = [111111111111111111, 222222222222222222]
 
 [gregglimper.models]
 message_model = "gpt-4o-mini"
-image_model = "gpt-image-1"
+image_model = "gpt-5-nano-2025-08-07"
 web_model = "gpt-4o-mini-search-preview"
-detail_check_model = "gpt-5.1-nano-2025-08-07"
-tool_check_model = "gpt-5.1-nano-2025-08-07"
-reasoning_model = "gpt-5.1-nano-2025-08-07"
+relevancy_check_model = "gpt-5-nano-2025-08-07"
+tool_check_model = "gpt-5-nano-2025-08-07"
 
 [gregglimper.limits]
 context_length = 100
@@ -23,7 +22,7 @@ max_image_mb = 50
 max_gif_mb = 50
 yt_thumbnail_size = "medium"
 yt_desc_max_len = 200
-detail_check_max_loops = 5
+relevancy_check_max_loops = 5
 
 [gregglimper.cache]
 cache_length = 200

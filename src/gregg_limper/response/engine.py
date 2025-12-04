@@ -42,6 +42,10 @@ class PipelineContext:
     # Tool context (guild_id, channel_id, etc.)
     tool_context: Any = None  # Typed as Any to avoid circular imports for now, ideally ToolContext
 
+    # Metadata from the last executed step (e.g. reasoning trace, relevancy stats)
+    # Steps can populate this to expose internal details to the tracer.
+    step_metadata: dict[str, Any] = field(default_factory=dict)
+
 
 class PipelineStep(ABC):
     """

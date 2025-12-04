@@ -34,14 +34,26 @@ class ToolExecutionStep(PipelineStep):
 
         logger.debug("Running decoupled tool execution check.")
         
-        # We use the smart model to check for tool usage
-        # We pass the current messages (history + context)
-        # We do NOT pass the system prompt of the persona, but maybe a system prompt for the tool checker?
-        # For now, let's just use the messages as is, but maybe prepend a system instruction
+        # Optimize: Filter out system messages (e.g. Persona) to reduce latency/tokens
+        # We only want the conversation history (User/Assistant) + Tool Checker System Prompt
+        history_messages = [m for m in context.messages if m.get("role") != "system"]
+        
+        # Build the dynamic tool description
+        from gregg_limper.tools import build_tool_description
+        tool_desc = build_tool_description(tool_specs)
         
         tool_check_messages = [
-            {"role": "system", "content": "You are a helpful assistant. Analyze the conversation and use tools if necessary to answer the user's request."}
-        ] + context.messages
+            {
+                "role": "system", 
+                "content": (
+                    "You are a tool-calling assistant. Your ONLY job is to detect if the user's message "
+                    "requires a tool execution (like searching history). If the user asks to recall, "
+                    "remember, or check past events, you MUST call the appropriate tool."
+                )
+            },
+            # Inject the tool list as an assistant message to guide the model
+            {"role": "assistant", "content": tool_desc}
+        ] + history_messages
         
         openai_tools = [spec.to_openai() for spec in tool_specs]
         
@@ -52,6 +64,7 @@ class ToolExecutionStep(PipelineStep):
             
             # We maintain a local conversation list for the tool checker
             checker_conversation = list(tool_check_messages)
+            executed_tools_log = []
             
             max_iters = 5
             tools_executed = False
@@ -97,6 +110,9 @@ class ToolExecutionStep(PipelineStep):
                     
                     logger.info("Decoupled tool execution: %s(%s)", name, arguments)
                     
+                    # Log for metadata
+                    executed_tools_log.append({"name": name, "args": arguments})
+                    
                     try:
                         result = await execute_tool(name, arguments, context=context.tool_context)
                         content = result.context_content
@@ -124,6 +140,11 @@ class ToolExecutionStep(PipelineStep):
             if tools_executed:
                 logger.info("Decoupled tool execution complete. Results injected.")
                 
+            # Capture metadata for the trace
+            context.step_metadata = {
+                "tools_executed": executed_tools_log
+            }
+            
         except Exception as e:
             logger.error("Error during decoupled tool execution: %s", e)
             

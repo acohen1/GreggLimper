@@ -9,7 +9,6 @@ from .cache import Cache
 from .rag import Rag
 from .milvus import Milvus
 from .local_llm import LocalLLM
-from .prompt import Prompt
 
 load_dotenv()
 
@@ -26,7 +25,6 @@ cache = Cache(_RAW_CONFIG)
 rag = Rag(_RAW_CONFIG)
 milvus = Milvus(_RAW_CONFIG)
 local_llm = LocalLLM(_RAW_CONFIG)
-prompt = Prompt(_RAW_CONFIG)
 
 
 class Config:
@@ -35,7 +33,6 @@ class Config:
     rag = rag
     milvus = milvus
     local_llm = local_llm
-    prompt = prompt
 
 
-__all__ = ["core", "cache", "rag", "milvus", "local_llm", "prompt", "Config"]
+__all__ = ["core", "cache", "rag", "milvus", "local_llm", "Config"]

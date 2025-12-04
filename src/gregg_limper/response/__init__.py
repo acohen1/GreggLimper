@@ -10,8 +10,7 @@ from gregg_limper.response.engine import PipelineContext, ResponsePipeline
 from gregg_limper.response.sources.payload import build_prompt_payload
 from gregg_limper.response.steps.context import ContextGatheringStep
 from gregg_limper.response.steps.generation import GenerationStep
-from gregg_limper.response.steps.reasoning import ReasoningStep
-from gregg_limper.response.steps.refinement import RefinementStep
+from gregg_limper.response.steps.relevancy import RelevancyStep
 from gregg_limper.response.steps.tools import ToolExecutionStep
 from gregg_limper.response.tracer import PipelineTracer
 from gregg_limper.tools import ToolContext
@@ -36,9 +35,8 @@ async def handle(message: discord.Message) -> str:
     # Initialize Steps
     context_step = ContextGatheringStep()
     tool_step = ToolExecutionStep()
-    reasoning_step = ReasoningStep()
     generation_step = GenerationStep()
-    refinement_step = RefinementStep(generation_step)
+    relevancy_step = RelevancyStep()
     
     # Initialize Tracer
     tracer = PipelineTracer()
@@ -47,9 +45,8 @@ async def handle(message: discord.Message) -> str:
     pipeline = ResponsePipeline([
         context_step,
         tool_step,
-        reasoning_step,
         generation_step,
-        refinement_step
+        relevancy_step
     ], tracer=tracer)
 
     # Execute

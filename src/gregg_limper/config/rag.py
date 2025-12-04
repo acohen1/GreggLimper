@@ -28,3 +28,6 @@ class Rag:
         )
         triggers_raw = rag_cfg.get("rag_reaction_emojis", os.getenv("RAG_REACTION_EMOJIS", "")) or ""
         self.REACTION_TRIGGERS: List[str] = _split_triggers(triggers_raw)
+        self.VECTOR_SEARCH_K: int = int(
+            rag_cfg.get("rag_vector_search_k", os.getenv("RAG_VECTOR_SEARCH_K", "3"))
+        )

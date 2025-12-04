@@ -14,3 +14,4 @@ prompt.md
 data/runtime/
 *.egg-info/
 .DS_Store
+!data/runtime/pipeline_trace.json

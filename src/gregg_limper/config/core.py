@@ -35,12 +35,11 @@ class Core:
         self.MSG_MODEL_ID: str | None = models_cfg.get("message_model") or os.getenv("MSG_MODEL_ID")
         self.IMG_MODEL_ID: str | None = models_cfg.get("image_model") or os.getenv("IMG_MODEL_ID")
         self.WEB_MODEL_ID: str | None = models_cfg.get("web_model") or os.getenv("WEB_MODEL_ID")
-        self.DETAIL_CHECK_MODEL_ID: str | None = models_cfg.get("detail_check_model") or os.getenv("DETAIL_CHECK_MODEL_ID")
-        self.TOOL_CHECK_MODEL_ID: str | None = models_cfg.get("tool_check_model") or os.getenv("TOOL_CHECK_MODEL_ID") or self.DETAIL_CHECK_MODEL_ID
-        self.REASONING_MODEL_ID: str | None = models_cfg.get("reasoning_model") or os.getenv("REASONING_MODEL_ID") or self.DETAIL_CHECK_MODEL_ID
+        self.RELEVANCY_CHECK_MODEL_ID: str | None = models_cfg.get("relevancy_check_model") or os.getenv("RELEVANCY_CHECK_MODEL_ID")
+        self.TOOL_CHECK_MODEL_ID: str | None = models_cfg.get("tool_check_model") or os.getenv("TOOL_CHECK_MODEL_ID") or self.RELEVANCY_CHECK_MODEL_ID
 
         self.CONTEXT_LENGTH: int = int(limits_cfg.get("context_length", os.getenv("CONTEXT_LENGTH", "10")))
-        self.DETAIL_CHECK_MAX_LOOPS: int = int(limits_cfg.get("detail_check_max_loops", os.getenv("DETAIL_CHECK_MAX_LOOPS", "3")))
+        self.RELEVANCY_CHECK_MAX_LOOPS: int = int(limits_cfg.get("relevancy_check_max_loops", os.getenv("RELEVANCY_CHECK_MAX_LOOPS", "3")))
         self.MAX_IMAGE_MB: int = int(limits_cfg.get("max_image_mb", os.getenv("MAX_IMAGE_MB", "5")))
         self.MAX_GIF_MB: int = int(limits_cfg.get("max_gif_mb", os.getenv("MAX_GIF_MB", "10")))
         self.YT_THUMBNAIL_SIZE: str = str(limits_cfg.get("yt_thumbnail_size", os.getenv("YT_THUMBNAIL_SIZE", "medium")))

@@ -21,9 +21,8 @@ Set these in `.env` (the `token_env` keys in `config.toml` reference these names
 - `message_model`: Chat model for replies.
 - `image_model`: Vision model for image/GIF captions.
 - `web_model`: Model used for web summaries.
-- `detail_check_model`: Model used to check response completeness (optional).
-- `tool_check_model`: Model used for the decoupled tool execution step (optional, defaults to `detail_check_model`).
-- `reasoning_model`: Model used for the reasoning step (optional, defaults to `detail_check_model`).
+- `relevancy_check_model`: Model for checking response relevancy. (optional).
+- `tool_check_model`: Model used for the decoupled tool execution step (optional, defaults to `relevancy_check_model`).
 
 ### [gregglimper.limits]
 - `context_length`: Recent cached messages included per prompt.
@@ -31,7 +30,7 @@ Set these in `.env` (the `token_env` keys in `config.toml` reference these names
 - `max_gif_mb`: Reject GIFs above this size.
 - `yt_thumbnail_size`: YouTube thumbnail size.
 - `yt_desc_max_len`: Truncation length for YouTube descriptions.
-- `detail_check_max_loops`: Maximum accumulation loops for incomplete responses (default 3).
+- `relevancy_check_max_loops`: Maximum number of times to regenerate an irrelevant response.s (default 3).
 
 ### [gregglimper.cache]
 - `cache_length`: Rolling window size per channel.

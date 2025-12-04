@@ -102,26 +102,6 @@ async def summarize_url(
         summary = re.sub(r'\[.*?\]\(https?://[^\)]+\)', '', summary)
     return summary
 
-    # NOTE: (LEGACY) The following code is an alternative way to use the web search tool for models
-    # that aren't specifically dedicated to web search. If using -search-preview models, ignore this,
-    # you can use the above method directly.
-    # This is left here for reference but not used in the current implementation.
-    
-    # resp = await aoai.responses.create(
-    #     model=model,
-    #     tools=[{
-    #         "type": "web_search_preview",
-    #         "search_context_size": context_size,
-    #     }],
-    #
-    #     input=f"{prompt}\nURL: {url}",
-    #     # max_output_tokens=max_output_tokens
-    # )
-    # summary = resp.output_text.strip()
-    # # Remove in-text citations if requested
-    # if not enable_citations:
-    #     summary = re.sub(r'\[.*?\]\(https?://[^\)]+\)', '', summary)
-    # return summary
 
 # ==============================================
 # Text utilities
@@ -130,6 +110,7 @@ async def summarize_url(
 async def chat(
     messages: list[dict],
     model=core.MSG_MODEL_ID,
+    temperature: float | None = None,
 ) -> str:
     """
     Send a basic chat completion request to OpenAI and return the response text.
@@ -147,10 +128,11 @@ async def chat(
             }
         ]
     """
-    resp = await aoai.chat.completions.create(
-        model=model,
-        messages=messages,
-    )
+    kwargs = {"model": model, "messages": messages}
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+
+    resp = await aoai.chat.completions.create(**kwargs)
 
     return resp.choices[0].message.content.strip()
 
@@ -175,57 +157,3 @@ async def moderate(input: str, *, model: str) -> dict:
     """Call OpenAI's moderation endpoint."""
     response = await aoai.moderations.create(model=model, input=input)
     return await aoai.moderations.create(model=model, input=input)
-
-
-async def check_completeness(response_text: str, history_messages: list[dict], model: str) -> bool:
-    """
-    Uses the specified model to check if a response is complete.
-    Constructs the prompt using the history and response text.
-    Returns True if complete (or on error), False otherwise.
-    """
-    prompt = (
-        "You are a response quality analyzer. Your job is to determine if the ASSISTANT's response "
-        "is complete and sufficient given the CONVERSATION HISTORY, or if it is too brief, "
-        "lacks detail, or misses context.\n\n"
-        "CONVERSATION HISTORY:\n"
-    )
-    
-    # Add last few messages for context (limit to avoid huge prompts)
-    recent_history = history_messages[-5:]
-    for msg in recent_history:
-        role = msg.get("role", "unknown")
-        content = msg.get("content", "")
-        prompt += f"{role.upper()}: {content}\n"
-        
-    prompt += f"\nASSISTANT CURRENT RESPONSE:\n{response_text}\n\n"
-    prompt += (
-        "INSTRUCTIONS:\n"
-        "- If the response is a simple acknowledgement (e.g. 'Okay', 'Thanks') and that fits the context, it is COMPLETE.\n"
-        "- If the response answers the user's question fully, it is COMPLETE.\n"
-        "- If the response seems cut off, lacks necessary detail, or misses an obvious opportunity to use a tool or elaborate, it is INCOMPLETE.\n"
-        "- Output ONLY the word 'COMPLETE' or 'CONTINUE'. Do not add any other text."
-    )
-
-    try:
-        result = await chat(
-            messages=[{"role": "user", "content": prompt}],
-            model=model
-        )
-        decision = result.strip().upper()
-        logger.info("Detail check decision: %s", decision)
-        return "COMPLETE" in decision
-    except Exception as e:
-        logger.warning("Detail check failed, defaulting to complete: %s", e)
-        return True
-
-
-def get_refinement_instruction() -> str:
-    """
-    Returns the instruction prompt for rewriting an incomplete response.
-    """
-    return (
-        "Your previous response (above) was WAY too short. It needs to be significantly longer and more detailed. "
-        "REWRITE the entire response to be at least 2-3x longer. "
-        "Keep your persona/slang, but you MUST elaborate on your points, add new context, or go on a tangent. "
-        "Do not be lazy. Do not apologize. Just output the longer, better response."
-    )
