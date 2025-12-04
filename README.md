@@ -19,8 +19,8 @@ Discord assistant for knowledge retrieval and response generation. Gregg Limper 
   - [Run the Bot](#run-the-bot)
   - [Run the Test Suite](#run-the-test-suite)
 - [Slash Commands](#slash-commands)
-- [Configuration Reference](#configuration-reference)
 - [Handler Registries](#handler-registries)
+- [Tuner Package](#tuner-package)
 - [Development Notes](#development-notes)
 - [Troubleshooting & Debugging](#troubleshooting--debugging)
 - [Further Reading](#further-reading)
@@ -39,7 +39,10 @@ Gregg Limper is a Discord assistant that replies like a long-time regular who ne
 - Operators can highlight high-signal moments by reacting with approved emoji, promoting only those opted-in messages into long-term RAG storage (`event_hooks/reaction_hook.py`).
 - Dual model support: OpenAI APIs by default with optional local Ollama fallback (`config/local_llm.py`, `clients/ollama.py`).
 - Background maintenance that refreshes stale embeddings, keeps SQLite lean, and reconciles Milvus vector indexes (`memory/rag/scheduler.py`).
-- Debug-first ergonomics: cached fragments persist to disk, and every completion request records context and message payloads for inspection (`debug_history.md`, `debug_context.md`, `debug_messages.json`).
+- **Multi-Pass Response Accumulation:** Iteratively prompts the model to flesh out brief responses, using a lightweight classifier to ensure completeness (`response/accumulator.py`).
+- Relevancy checking step removed.
+- **Responsive UX:** Displays a "Typing..." indicator in Discord throughout the entire Chain-of-Thought process, giving users visual feedback while the bot reasons and generates.
+- Debug-first ergonomics: cached fragments persist to disk, and every completion request records context and message payloads under `data/runtime/` (`debug_history.md`, `debug_context.md`, `debug_messages.json`).
 
 ## Architecture
 
@@ -76,17 +79,18 @@ The cache relies on the formatter to transform raw Discord messages into stable 
 
 ### Prompt Orchestration
 
-`response.pipeline.build_prompt_payload` assembles the final chat request:
+`response.handle` orchestrates a modular Chain-of-Thought (CoT) pipeline:
 
-1. `response.history.build_history` serializes cached messages into user/assistant turns up to `core.CONTEXT_LENGTH`.
-2. `response.context.gather_context` pulls channel summaries and opt-in user profiles; deeper history is fetched on demand via tools.
-3. Messages are merged with the system prompt from `response.system_prompt.get_system_prompt`, yielding a fully grounded `messages` list.
-4. The bot calls OpenAI (`clients/oai.chat_full`) or a configured local Ollama model (`clients/ollama.chat`). When the model issues tool calls, the loop executes the requested tools, appends their outputs, and resubmits the conversation until a final reply is produced.
+1.  **Context Gathering (`steps/context.py`)**: Fetches history, channel summaries, and user profiles to build the initial `PromptPayload`.
+2.  **Generation (`steps/generation.py`)**: The main persona model generates the final text, calling tools inline when requested by the model and incorporating the results.
+3.  **(Relevancy removed)**
+4.  (Relevancy step removed)
 
 ### Tool Calling
 
-- Tool metadata lives in `src/gregg_limper/tools/__init__.py`; individual handlers reside in `src/gregg_limper/tools/handlers/` and register themselves with the shared decorator.
-- The `retrieve_context` tool reuses the RAG pipeline to surface prior fragments only when the assistant asks for them, keeping the base prompt slim.
+- Tool metadata lives in `src/gregg_limper/tools/__init__.py`; individual handlers reside in `src/gregg_limper/tools/handlers/`.
+- **Inline Tool Calling**: The persona model can invoke tools directly via OpenAI function calling; tool results are fed back into the same conversation before finalizing the reply.
+- The `retrieve_context` tool reuses the RAG pipeline to surface prior fragments only when the assistant asks for them.
 - Tool execution is logged (`response.__init__`), cached per call signature, and visible in `debug_messages.json` via synthetic `role: "tool"` entries.
 
 ### Background Maintenance
@@ -108,12 +112,17 @@ The cache relies on the formatter to transform raw Discord messages into stable 
 │   ├── event_hooks/       # Discord event routers (ready/message/reaction)
 │   ├── formatter/         # Message classification and fragment builders
 │   ├── memory/            # Cache + RAG storage, ingestion, and scheduling
-│   ├── response/          # Prompt assembly and completion orchestration
+│   ├── response/          # CoT Pipeline Engine
+│   │   ├── steps/         # Pipeline steps (Context, Gen)
+│   │   └── sources/       # Data sources (History, Payload, Context)
 │   ├── tools/             # Tool registry, execution helpers, and handlers
 │   └── maintenance.py     # Shared utilities for background tasks
-├── tests/                 # Pytest suites covering cache, formatter, tools, RAG, commands
+├── tuner/                 # Standalone finetuner CLI (see tuner/README.md)
+├── tests/                 # Root test tree (`tests/gregg_limper/`, `tests/tuner/`)
 ├── docs/                  # Milvus GPU setup and restart notebooks
 ├── data/                  # Default SQLite DB and memo snapshots (development)
+├── config.toml            # Unified config file (copy from config/config.sample.toml)
+├── .env                   # Environment variable overrides (copy from config/.env.example)
 ├── requirements.txt       # Dependency pin list (mirrors extras in pyproject)
 ├── pyproject.toml         # Build metadata and dependency declarations
 └── LICENSE                # MIT license
@@ -142,14 +151,12 @@ pip install -e .[test]     # editable install with test extras
 
 ### Configuration
 
-1. Copy the example environment file and populate the secrets:
+1. Copy the unified config template and tailor it:
    ```bash
-   cp .env.example .env
+   cp config/config.sample.toml config.toml
    ```
-2. Update all required keys (Discord, OpenAI, Google Cloud) and set `CHANNEL_IDS` to the numeric IDs you want the bot to monitor.
-3. If Milvus is not available, set `ENABLE_MILVUS=0` to skip vector indexing.
-4. To use a local Ollama model, set `USE_LOCAL=1`, `LOCAL_SERVER_URL`, and `LOCAL_MODEL_ID`.
-5. Configure `RAG_REACTION_EMOJIS` with the emoji descriptors (unicode, `<:name:id>`, `name:id`, numeric ID, or `:name:`) that should promote an opted-in message into long-term RAG storage.
+2. Copy `config/.env.example` to `.env` and add secrets only (Discord, OpenAI, Google Cloud).
+3. See [config/CONFIG.md](config/CONFIG.md) for the full field breakdown (bot runtime plus `[finetune.*]` for the tuner) and the env var details.
 
 ### Run the Bot
 
@@ -166,10 +173,15 @@ During startup the bot will:
 ### Run the Test Suite
 
 ```bash
-pytest
+pytest                    # run every suite (core + tuner)
+pytest tests/gregg_limper # core bot suites only
+pytest tests/tuner        # finetuner suites only
 ```
 
-Pytest targets are organized by subsystem (`tests/cache`, `tests/formatter`, `tests/rag`, etc.), and fixtures in `tests/conftest.py` provide Discord stubs plus temporary storage paths.
+Pytest targets live under two top-level packages:
+- `tests/gregg_limper/` — core bot suites (cache, formatter, rag, tools, etc.) with their own scoped `conftest.py`.
+- `tests/tuner/` — finetuner CLI coverage.
+`tests/conftest.py` carries any shared fixtures across packages.
 
 ## Slash Commands
 
@@ -179,57 +191,6 @@ Pytest targets are organized by subsystem (`tests/cache`, `tests/formatter`, `te
 - `/rag_status` — Report whether the caller is currently opted in to retrieval.
 
 Additional commands can be added by creating new handlers under `src/gregg_limper/commands/handlers/` and decorating cogs with `@register_cog`.
-
-## Configuration Reference
-
-### Required Credentials
-
-| Variable | Purpose |
-| --- | --- |
-| `DISCORD_API_TOKEN` | Bot token used by `discord.py` to connect and subscribe to events. |
-| `OPENAI_API_KEY` | Grants access to chat, embedding, image, and web models used across the pipeline. |
-| `GCLOUD_API_KEY` | Authenticates calls to the YouTube Data API for video metadata. |
-| `BOT_USER_ID` | Numeric Discord user ID of the bot; used to filter self-mentions and seed consent. |
-| `MSG_MODEL_ID` / `IMG_MODEL_ID` / `WEB_MODEL_ID` | Model identifiers for chat replies, vision captioning, and web summarization respectively. |
-| `CHANNEL_IDS` | Comma-separated list of guild channel IDs that the cache should ingest. |
-
-### Core Behaviour
-
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `CONTEXT_LENGTH` | `10` | Number of recent cached messages included in each prompt. |
-| `MAX_IMAGE_MB` | `5` | Rejects oversized image attachments during captioning. |
-| `MAX_GIF_MB` | `10` | Guards GIF downloads during metadata extraction. |
-| `YT_THUMBNAIL_SIZE` | `medium` | Thumbnail size requested from the YouTube API. |
-| `YT_DESC_MAX_LEN` | `200` | Truncation length for video descriptions in fragments. |
-
-### Cache & Retrieval
-
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `CACHE_LENGTH` | `200` | Rolling window size per channel for the in-memory cache. |
-| `MEMO_DIR` | `data/cache` | Directory where memo snapshots (`*.json.gz`) are persisted. |
-| `CACHE_INIT_CONCURRENCY` | `20` | Parallelism when formatting history during startup. |
-| `CACHE_INGEST_CONCURRENCY` | `20` | Max concurrent ingestion tasks during hydration. |
-| `SQL_DB_DIR` | `data/memory.db` | SQLite file used for long-term storage. |
-| `EMB_MODEL_ID` / `EMB_DIM` | `text-embedding-3-small` / `1536` | Embedding model and dimension enforced by maintenance. |
-| `MAINTENANCE_INTERVAL` | `3600` | Seconds between maintenance cycles. |
-| `RAG_OPT_IN_LOOKBACK_DAYS` | `180` | How far back to backfill when a user opts in. |
-| `RAG_BACKFILL_CONCURRENCY` | `20` | Concurrency for RAG backfill ingestion tasks. |
-| `RAG_REACTION_EMOJIS` | _(empty)_ | Comma-separated list of emoji descriptors that trigger RAG ingestion. Supported forms: unicode literals (`🔥`), full custom emoji (`<:greatprophet:123>`), shorthand `name:id`, bare numeric IDs (`123`), and names with or without surrounding colons (`WOOW` or `:WOOW:`). |
-| `RAG_VECTOR_SEARCH_K` | `3` | Maximum RAG fragments returned per query (tool requests are clamped to this). |
-
-### Vector Store & Local Models
-
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `ENABLE_MILVUS` | `1` | Toggle Milvus integration. Set to `0` to fall back to short-term cache only (RAG retrieval is disabled). |
-| `MILVUS_HOST` / `MILVUS_PORT` | `127.0.0.1` / `19530` | Milvus connection parameters. |
-| `MILVUS_COLLECTION` | `vectordb` | Collection name for fragment vectors. |
-| `MILVUS_NLIST` / `MILVUS_NPROBE` / `MILVUS_DELETE_CHUNK` | `1024` / `32` / `800` | Index tuning knobs mirrored by maintenance utilities. |
-| `USE_LOCAL` | `0` | When truthy, `response.handle` calls Ollama instead of OpenAI chat. |
-| `LOCAL_MODEL_ID` | `gpt-oss-20b` | Ollama model identifier. |
-| `LOCAL_SERVER_URL` | `http://localhost:11434` | Ollama server address. |
 
 ## Handler Registries
 
@@ -252,7 +213,7 @@ The tables below highlight the specifics for each subsystem.
 | Directory | `src/gregg_limper/commands/handlers/` |
 | Decorator | `commands.register_cog` |
 | Runtime API | `commands.setup(bot)` attaches every registered cog |
-| When adding | Provide any Discord slash command definitions within the Cog, note that modules are imported eagerly, and run the bot (or `pytest tests/test_commands_setup.py`) to validate registration (see `src/gregg_limper/commands/__init__.py`). |
+| When adding | Provide any Discord slash command definitions within the Cog, note that modules are imported eagerly, and run the bot (or `pytest tests/gregg_limper/test_commands_setup.py`) to validate registration (see `src/gregg_limper/commands/__init__.py`). |
 
 ### Tool Handlers
 | Item | Location / Notes |
@@ -260,7 +221,17 @@ The tables below highlight the specifics for each subsystem.
 | Directory | `src/gregg_limper/tools/handlers/` |
 | Decorator | `tools.register_tool` |
 | Runtime API | `tools.get_registered_tool_specs()` / `tools.get_tool_entry(name)` |
-| When adding | Return a `ToolResult` from `run`, add or update tests in `tests/tools/`, consider logging/timeout behaviour, and document new configuration knobs if needed (see `src/gregg_limper/tools/__init__.py`). |
+| When adding | Return a `ToolResult` from `run`, add or update tests in `tests/gregg_limper/tools/`, consider logging/timeout behaviour, and document new configuration knobs if needed (see `src/gregg_limper/tools/__init__.py`). |
+
+## Tuner Package
+
+Need a supervised dataset that mirrors Gregg Limper's prompt stack? The repo ships with a standalone tuner CLI under [`tuner/`](tuner/README.md). It collects Discord history (respecting whitelisted speakers and earliest cutoffs), injects synthetic `retrieve_context` calls, and exports JSONL records that match OpenAI's chat finetune schema.
+
+- Use the root `config.toml` `[finetune.*]` sections to set channels, allowed users, earliest timestamp, paths, and model IDs (tuner defaults to that file; you can still pass `--config` to point elsewhere).
+- Run `python -m tuner build-dataset`; CLI flags override any TOML value when you need to experiment with alternate slices.
+- Progress logs report per-channel hydration, LLM segment approvals, and the final supervised sample tally so you can monitor long-running builds.
+
+See [tuner/README.md](tuner/README.md) for full configuration and schema details.
 
 ## Development Notes
 
@@ -275,16 +246,18 @@ The tables below highlight the specifics for each subsystem.
 - **Milvus connection errors:** `ready_hook.handle` runs `vector.health.validate_connection` and will log detailed GPU index failures. Disable Milvus or update credentials if validation raises.
 - **Consent issues:** `/rag_status` reflects the persisted consent table. Use `/optin enabled:false` to purge stored fragments for a user (`memory/rag/__init__.py::purge_user`).
 - **No reactions, no ingest:** Opted-in messages only reach long-term storage when they have a reaction listed in `RAG_REACTION_EMOJIS`. Verify the config and make sure moderators react to important posts.
-- **Prompt audits:** Each completion writes `debug_history.md`, `debug_context.md`, and `debug_messages.json` at the project root, mirroring exactly what was sent to the model.
+- **Prompt audits:** Each completion writes `debug_history.md`, `debug_context.md`, and `debug_messages.json` under `data/runtime/`, mirroring exactly what was sent to the model.
+- **Pipeline Tracing:** The `PipelineTracer` writes a comprehensive JSON log to `data/runtime/pipeline_trace.json` after every step (`Context`, `Tools`, `Gen`, `Refine`), capturing the exact state evolution of the response.
 - **Tool debugging:** Tool executions log their call IDs and arguments at INFO level (`gregg_limper.response`). Tool outputs appear in `debug_messages.json` as `role: "tool"` entries.
-- **Cache visibility:** Enable INFO logging to see `Cached msg ...` previews coming from `memory/cache/manager.py`. Use `GLCache().list_formatted_messages` in a REPL to inspect memo payloads.
+- **Cache visibility:** Enable INFO logging to see Cached msg ... previews coming from memory/cache/manager.py. Use GLCache().list_formatted_messages in a REPL to inspect memo payloads.
+- **Response Accumulation:** Relevancy step removed; no related settings remain.
 
 ## Further Reading
 
-- `docs/setup_milvus_gpu.ipynb` and `docs/restart_milvus_gpu.ipynb` for GPU-backed Milvus deployment notes.
-- `tests/cache/` for cache hydration and eviction behavior.
-- `tests/rag/` for consent flows, backfill parity, and vector synchronization scenarios.
-- `tests/formatter/` for fragment classification and serialization expectations.
+- `docs/setup_milvus_gpu.ipynb` for GPU-backed Milvus deployment notes.
+- `src/gregg_limper/memory/cache/__init__.py` for cache hydration, eviction, and memo persistence internals.
+- `src/gregg_limper/memory/rag/__init__.py` for consent flows, backfill parity, and vector synchronization routines.
+- `src/gregg_limper/formatter/handlers/__init__.py` for fragment classification/serialization expectations.
 
 ## License
 

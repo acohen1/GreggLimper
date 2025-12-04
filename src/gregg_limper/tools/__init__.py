@@ -17,8 +17,8 @@ Adding a new tool requires changes across the app:
 1. Create a handler module under ``tools/handlers`` and register it with
    :func:`register_tool`.
 2. Ensure the handler returns meaningful text for the LLM (update tests in
-   ``tests/tools``).
-3. Document any new configuration in ``README.md`` and update ``.env.example``.
+   ``tests/gregg_limper/tools``).
+3. Document any new configuration in ``config/CONFIG.md`` and update ``config/.env.example``.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ __all__ = [
     "ToolResult",
     "ToolSpec",
     "ToolExecutionError",
-    "build_tool_prompt",
+    "build_tool_description",
     "get_registered_tool_specs",
     "get_tool_entry",
     "register_tool",
@@ -76,7 +76,8 @@ class ToolContext:
 class ToolResult:
     """Normalized tool output returned to the LLM."""
 
-    content: str
+    context_content: str
+    response_content: str | None = None
 
 
 class ToolExecutionError(RuntimeError):
@@ -127,7 +128,7 @@ def get_tool_entry(name: str) -> Type[Tool] | None:
     return _registry.get(name)
 
 
-def build_tool_prompt(specs: Iterable[ToolSpec]) -> str:
+def build_tool_description(specs: Iterable[ToolSpec]) -> str:
     """Render a succinct Markdown description of available tools."""
 
     lines = ["### Tools", "The assistant can call these tools when helpful:"]

@@ -4,19 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from gregg_limper.config import prompt as prompt_cfg
+from gregg_limper.config import rag as rag_cfg
 from gregg_limper.memory import rag
 
 from .. import Tool, ToolContext, ToolResult, ToolSpec, ToolExecutionError, register_tool
 
-_MAX_RESULTS = max(1, prompt_cfg.VECTOR_SEARCH_K)
+_MAX_RESULTS = max(1, rag_cfg.VECTOR_SEARCH_K)
 _DEFAULT_RESULTS = min(3, _MAX_RESULTS)
 
 
 @register_tool(
     ToolSpec(
         name="retrieve_context",
-        description="Search cached memories relevant to the given query.",
+        description="Search the server's history for past events or context. Use this tool when the user talks about something that happened in the past, references previous conversations, or when you need to recall specific details from the server's history to answer a question. This is useful for providing context-aware responses based on prior interactions.",
         parameters={
             "type": "object",
             "properties": {
@@ -58,7 +58,7 @@ class RetrieveContextTool(Tool):
 
         results = await rag.vector_search(guild_id, channel_id, query, k=k)
         if not results:
-            return ToolResult(content="No related context was found.")
+            return ToolResult(context_content="No related context was found.")
 
         lines: list[str] = []
         for idx, row in enumerate(results, start=1):
@@ -66,4 +66,4 @@ class RetrieveContextTool(Tool):
             author = row.get("author_id") or "unknown"
             lines.append(f"{idx}. {snippet} (author: {author}, message: {row.get('message_id')})")
 
-        return ToolResult(content="\n".join(lines))
+        return ToolResult(context_content="\n".join(lines))

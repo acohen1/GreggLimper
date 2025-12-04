@@ -48,17 +48,12 @@ async def handle(client: discord.Client, message: discord.Message):
         logger.error(f"Failed to cache message {message.id}: {e}")
 
 
-    # DEBUGGING
-    recent_messages = cache.list_formatted_messages(message.channel.id, "llm", n=5)
-    for m in recent_messages:
-        m_str = json.dumps(m, ensure_ascii=False, separators=(",", ": "))
-        logger.info(
-            f"Cached message: {m_str[:100]}..."
-        )  # Log first 100 chars for brevity
+
 
     # 3) Start response pipeline if bot is mentioned
     if not bot_mentioned:
         return
 
     response_text = await response.handle(message)
-    await message.channel.send(response_text)
+    # Reply directly to the triggering message (avoid re-mentioning the author)
+    await message.reply(response_text, mention_author=False)

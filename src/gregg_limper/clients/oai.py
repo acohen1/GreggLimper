@@ -102,26 +102,6 @@ async def summarize_url(
         summary = re.sub(r'\[.*?\]\(https?://[^\)]+\)', '', summary)
     return summary
 
-    # NOTE: (LEGACY) The following code is an alternative way to use the web search tool for models
-    # that aren't specifically dedicated to web search. If using -search-preview models, ignore this,
-    # you can use the above method directly.
-    # This is left here for reference but not used in the current implementation.
-    
-    # resp = await aoai.responses.create(
-    #     model=model,
-    #     tools=[{
-    #         "type": "web_search_preview",
-    #         "search_context_size": context_size,
-    #     }],
-    #
-    #     input=f"{prompt}\nURL: {url}",
-    #     # max_output_tokens=max_output_tokens
-    # )
-    # summary = resp.output_text.strip()
-    # # Remove in-text citations if requested
-    # if not enable_citations:
-    #     summary = re.sub(r'\[.*?\]\(https?://[^\)]+\)', '', summary)
-    # return summary
 
 # ==============================================
 # Text utilities
@@ -130,6 +110,7 @@ async def summarize_url(
 async def chat(
     messages: list[dict],
     model=core.MSG_MODEL_ID,
+    temperature: float | None = None,
 ) -> str:
     """
     Send a basic chat completion request to OpenAI and return the response text.
@@ -147,10 +128,11 @@ async def chat(
             }
         ]
     """
-    resp = await aoai.chat.completions.create(
-        model=model,
-        messages=messages,
-    )
+    kwargs = {"model": model, "messages": messages}
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+
+    resp = await aoai.chat.completions.create(**kwargs)
 
     return resp.choices[0].message.content.strip()
 
@@ -169,3 +151,9 @@ async def chat_full(
         if tool_choice:
             kwargs["tool_choice"] = tool_choice
     return await aoai.chat.completions.create(**kwargs)
+
+
+async def moderate(input: str, *, model: str) -> dict:
+    """Call OpenAI's moderation endpoint."""
+    response = await aoai.moderations.create(model=model, input=input)
+    return await aoai.moderations.create(model=model, input=input)
