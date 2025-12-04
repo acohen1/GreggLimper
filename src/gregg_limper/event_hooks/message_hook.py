@@ -55,4 +55,5 @@ async def handle(client: discord.Client, message: discord.Message):
         return
 
     response_text = await response.handle(message)
-    await message.channel.send(response_text)
+    # Reply directly to the triggering message (avoid re-mentioning the author)
+    await message.reply(response_text, mention_author=False)

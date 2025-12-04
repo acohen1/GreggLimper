@@ -40,7 +40,7 @@ Gregg Limper is a Discord assistant that replies like a long-time regular who ne
 - Dual model support: OpenAI APIs by default with optional local Ollama fallback (`config/local_llm.py`, `clients/ollama.py`).
 - Background maintenance that refreshes stale embeddings, keeps SQLite lean, and reconciles Milvus vector indexes (`memory/rag/scheduler.py`).
 - **Multi-Pass Response Accumulation:** Iteratively prompts the model to flesh out brief responses, using a lightweight classifier to ensure completeness (`response/accumulator.py`).
-- **Relevancy Checking:** Automatically regenerates responses if they are deemed irrelevant or nonsensical, using dynamic temperature scaling to break loops (`response/steps/relevancy.py`).
+- Relevancy checking step removed.
 - **Responsive UX:** Displays a "Typing..." indicator in Discord throughout the entire Chain-of-Thought process, giving users visual feedback while the bot reasons and generates.
 - Debug-first ergonomics: cached fragments persist to disk, and every completion request records context and message payloads under `data/runtime/` (`debug_history.md`, `debug_context.md`, `debug_messages.json`).
 
@@ -82,14 +82,14 @@ The cache relies on the formatter to transform raw Discord messages into stable 
 `response.handle` orchestrates a modular Chain-of-Thought (CoT) pipeline:
 
 1.  **Context Gathering (`steps/context.py`)**: Fetches history, channel summaries, and user profiles to build the initial `PromptPayload`.
-2.  **Tool Execution (`steps/tools.py`)**: A dedicated "smart model" (`TOOL_CHECK_MODEL_ID`) analyzes the context to decide if tools are needed. It executes them *before* the main generation, injecting results as system messages and capturing "artifacts" (like GIFs) for direct inclusion.
-3.  **Generation (`steps/generation.py`)**: The main persona model generates the final text, using the gathered context and tool results.
-4.  **Relevancy (`steps/relevancy.py`)**: If configured, a "Relevancy Check" model (`RELEVANCY_CHECK_MODEL_ID`) verifies if the response makes sense. If not, it regenerates the response with increasing temperature to break repetitive loops.
+2.  **Generation (`steps/generation.py`)**: The main persona model generates the final text, calling tools inline when requested by the model and incorporating the results.
+3.  **(Relevancy removed)**
+4.  (Relevancy step removed)
 
 ### Tool Calling
 
 - Tool metadata lives in `src/gregg_limper/tools/__init__.py`; individual handlers reside in `src/gregg_limper/tools/handlers/`.
-- **Decoupled Execution**: Tools are no longer called by the persona model. Instead, the `ToolExecutionStep` uses a specialized model (e.g., `gpt-5.1-nano`) to handle all functional logic, ensuring reliability and separating "reasoning" from "voice".
+- **Inline Tool Calling**: The persona model can invoke tools directly via OpenAI function calling; tool results are fed back into the same conversation before finalizing the reply.
 - The `retrieve_context` tool reuses the RAG pipeline to surface prior fragments only when the assistant asks for them.
 - Tool execution is logged (`response.__init__`), cached per call signature, and visible in `debug_messages.json` via synthetic `role: "tool"` entries.
 
@@ -113,7 +113,7 @@ The cache relies on the formatter to transform raw Discord messages into stable 
 │   ├── formatter/         # Message classification and fragment builders
 │   ├── memory/            # Cache + RAG storage, ingestion, and scheduling
 │   ├── response/          # CoT Pipeline Engine
-│   │   ├── steps/         # Pipeline steps (Context, Tools, Gen, Relevancy)
+│   │   ├── steps/         # Pipeline steps (Context, Gen)
 │   │   └── sources/       # Data sources (History, Payload, Context)
 │   ├── tools/             # Tool registry, execution helpers, and handlers
 │   └── maintenance.py     # Shared utilities for background tasks
@@ -250,7 +250,7 @@ See [tuner/README.md](tuner/README.md) for full configuration and schema details
 - **Pipeline Tracing:** The `PipelineTracer` writes a comprehensive JSON log to `data/runtime/pipeline_trace.json` after every step (`Context`, `Tools`, `Gen`, `Refine`), capturing the exact state evolution of the response.
 - **Tool debugging:** Tool executions log their call IDs and arguments at INFO level (`gregg_limper.response`). Tool outputs appear in `debug_messages.json` as `role: "tool"` entries.
 - **Cache visibility:** Enable INFO logging to see Cached msg ... previews coming from memory/cache/manager.py. Use GLCache().list_formatted_messages in a REPL to inspect memo payloads.
-- **Response Accumulation:** If the bot feels "stuck" in a loop or responses are too long, check `RELEVANCY_CHECK_MAX_LOOPS` (default 3) or disable the feature by unsetting `RELEVANCY_CHECK_MODEL_ID`.
+- **Response Accumulation:** Relevancy step removed; no related settings remain.
 
 ## Further Reading
 

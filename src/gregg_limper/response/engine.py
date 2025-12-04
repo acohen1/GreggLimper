@@ -42,7 +42,7 @@ class PipelineContext:
     # Tool context (guild_id, channel_id, etc.)
     tool_context: Any = None  # Typed as Any to avoid circular imports for now, ideally ToolContext
 
-    # Metadata from the last executed step (e.g. reasoning trace, relevancy stats)
+    # Metadata from the last executed step (e.g. reasoning trace, tool stats)
     # Steps can populate this to expose internal details to the tracer.
     step_metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -90,6 +90,8 @@ class ResponsePipeline:
             logger.debug("Running pipeline step %d: %s", i + 1, step_name)
             
             try:
+                # Reset step-scoped metadata so previous step data does not leak forward
+                current_context.step_metadata = {}
                 current_context = await step.run(current_context)
                 
                 # Capture state after step
