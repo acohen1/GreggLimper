@@ -11,6 +11,7 @@ from gregg_limper.config import core, local_llm
 from gregg_limper.response.engine import PipelineContext, PipelineStep
 from gregg_limper.tools import ToolExecutionError, get_registered_tool_specs
 from gregg_limper.tools.executor import execute_tool
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ class GenerationStep(PipelineStep):
         executed_tools_log: list[dict[str, Any]] = []
         cached_tool_results: dict[tuple[str, str], Any] = {}
         max_iters = 5
+        last_assistant_content = ""
 
         for _ in range(max_iters):
             resp = await oai.chat_full(
@@ -54,6 +56,7 @@ class GenerationStep(PipelineStep):
             choice = resp.choices[0]
             message = choice.message
             assistant_content = message.content or ""
+            last_assistant_content = assistant_content
             tool_calls = getattr(message, "tool_calls", None) or []
 
             assistant_entry: dict[str, Any] = {
@@ -94,24 +97,24 @@ class GenerationStep(PipelineStep):
                     name,
                     arguments,
                 )
-                cache_key = (name, arguments)
+                cache_key = (name, _canonical_args(arguments))
                 if cache_key in cached_tool_results:
                     content = cached_tool_results[cache_key]
-                    response_content = None
+                    response_fragment = None
                 else:
                     try:
                         result = await execute_tool(name, arguments, context=context.tool_context)
-                        content = result.context_content
-                        response_content = result.response_content
+                        content = result.tool_content
+                        response_fragment = result.response_fragment
                     except ToolExecutionError as exc:
                         content = f"Tool '{name}' failed: {exc}"
-                        response_content = None
+                        response_fragment = None
                     cached_tool_results[cache_key] = content
 
                 executed_tools_log.append({"name": name, "args": arguments})
 
-                if response_content:
-                    context.response_fragments.append(response_content)
+                if response_fragment:
+                    context.response_fragments.append(response_fragment)
 
                 conversation.append(
                     {
@@ -122,4 +125,24 @@ class GenerationStep(PipelineStep):
                     }
                 )
 
-        raise RuntimeError("Exceeded maximum tool call iterations")
+        # Fallback: return the last assistant content to avoid hard failure
+        context.response_text = (last_assistant_content or "").strip()
+        context.messages = conversation
+        context.step_metadata = {
+            "tools_executed": executed_tools_log,
+            "tool_loop_exhausted": True,
+        }
+        return context
+
+
+def _canonical_args(arguments: Any) -> str:
+    """Normalize arguments for caching purposes."""
+    if isinstance(arguments, str):
+        try:
+            parsed = json.loads(arguments)
+            return json.dumps(parsed, sort_keys=True)
+        except Exception:
+            return arguments.strip()
+    if isinstance(arguments, dict):
+        return json.dumps(arguments, sort_keys=True)
+    return str(arguments)

@@ -58,7 +58,7 @@ class RetrieveContextTool(Tool):
 
         results = await rag.vector_search(guild_id, channel_id, query, k=k)
         if not results:
-            return ToolResult(context_content="No related context was found.")
+            return ToolResult(tool_content="No related context was found.")
 
         lines: list[str] = []
         for idx, row in enumerate(results, start=1):
@@ -66,4 +66,4 @@ class RetrieveContextTool(Tool):
             author = row.get("author_id") or "unknown"
             lines.append(f"{idx}. {snippet} (author: {author}, message: {row.get('message_id')})")
 
-        return ToolResult(context_content="\n".join(lines))
+        return ToolResult(tool_content="\n".join(lines))

@@ -82,14 +82,14 @@ The cache relies on the formatter to transform raw Discord messages into stable 
 `response.handle` orchestrates a modular Chain-of-Thought (CoT) pipeline:
 
 1.  **Context Gathering (`steps/context.py`)**: Fetches history, channel summaries, and user profiles to build the initial `PromptPayload`.
-2.  **Generation (`steps/generation.py`)**: The main persona model generates the final text, calling tools inline when requested by the model and incorporating the results.
+2.  **Generation (`steps/generation.py`)**: The main persona model generates the final text and calls tools inline via OpenAI function calling; tool outputs are fed back into the same conversation before finalizing the reply.
 3.  **(Relevancy removed)**
 4.  (Relevancy step removed)
 
 ### Tool Calling
 
 - Tool metadata lives in `src/gregg_limper/tools/__init__.py`; individual handlers reside in `src/gregg_limper/tools/handlers/`.
-- **Inline Tool Calling**: The persona model can invoke tools directly via OpenAI function calling; tool results are fed back into the same conversation before finalizing the reply.
+- **Inline Tool Calling**: The persona model invokes tools directly via OpenAI function calling; tool results are fed back into the same conversation before finalizing the reply.
 - The `retrieve_context` tool reuses the RAG pipeline to surface prior fragments only when the assistant asks for them.
 - Tool execution is logged (`response.__init__`), cached per call signature, and visible in `debug_messages.json` via synthetic `role: "tool"` entries.
 
