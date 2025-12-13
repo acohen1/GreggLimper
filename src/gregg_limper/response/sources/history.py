@@ -51,7 +51,12 @@ def _convert_history(formatted_messages: Sequence[dict]) -> List[dict[str, str]]
         role = _resolve_role(author_name)
         fragments = formatted.get("fragments", [])
         content = _render_fragments(fragments)
-        if content:
+        if role == "assistant":
+            # NOTE: Testing removal of "Assistant said:" prefix for assistant messages;
+            # this is to prevent the bot from mirroring that phrase back to users.
+            # body = f"{author_name} said:\n{content}"
+            body = content or "Assistant shared non-text content."
+        elif content:
             body = f"{author_name} said:\n{content}"
         else:
             body = f"{author_name} shared non-text content."

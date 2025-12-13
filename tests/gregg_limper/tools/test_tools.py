@@ -32,5 +32,5 @@ def test_execute_tool_uses_rag(monkeypatch):
         )
     )
 
-    assert "Cheese pizza" in result.content
-    assert "Pepperoni pizza" in result.content
+    assert "Cheese pizza" in result.context_content
+    assert "Pepperoni pizza" in result.context_content
